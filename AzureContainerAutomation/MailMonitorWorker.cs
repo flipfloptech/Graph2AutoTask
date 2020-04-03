@@ -74,23 +74,33 @@ namespace AzureContainerAutomation
             try
             {
                 _folderList = _graphAPIClient.Users[_configuration.MailBox].MailFolders.Request().GetAsync().Result;
-                foreach (MailFolder _folder in _folderList)
+                while (_folderList != null)
                 {
-                    if (_folder.DisplayName.ToLower() == _configuration.Folders.Incoming.ToLower())
+                    foreach (MailFolder _folder in _folderList)
                     {
-                        _incoming_folder = _folder;
-                    }
+                        if (_folder.DisplayName.ToLower() == _configuration.Folders.Incoming.ToLower())
+                        {
+                            _incoming_folder = _folder;
+                        }
 
-                    if (_folder.DisplayName.ToLower() == _configuration.Folders.Processed.ToLower())
-                    {
-                        _processed_folder = _folder;
-                    }
+                        if (_folder.DisplayName.ToLower() == _configuration.Folders.Processed.ToLower())
+                        {
+                            _processed_folder = _folder;
+                        }
 
-                    if (_folder.DisplayName.ToLower() == _configuration.Folders.Failed.ToLower())
-                    {
-                        _failed_folder = _folder;
+                        if (_folder.DisplayName.ToLower() == _configuration.Folders.Failed.ToLower())
+                        {
+                            _failed_folder = _folder;
+                        }
                     }
+                    if (_folderList.NextPageRequest != null)
+                    {
+                        _folderList = _folderList.NextPageRequest.GetAsync().Result;
+                    }
+                    else
+                        _folderList = null;
                 }
+
                 if (_incoming_folder == null)
                 {
                     _incoming_folder = _graphAPIClient.Users[_configuration.MailBox].MailFolders.Request().AddAsync(new MailFolder()
@@ -140,12 +150,18 @@ namespace AzureContainerAutomation
                     _logger.LogInformation("Worker({mailbox}) processing mailbox: {mailbox} at: {time}", _configuration.MailBox, _configuration.MailBox, DateTimeOffset.Now);
                     try
                     {
-                        IMailFolderMessagesCollectionPage _messages = _graphAPIClient.Users[_configuration.MailBox].MailFolders[_incoming_folder.Id].Messages.Request().Header("Prefer", "outlook.body-content-type=\"text\"").Filter(_filter).GetAsync().Result;
-                        foreach (Message _message in _messages)
+                        IMailFolderMessagesCollectionPage _messages = await _graphAPIClient.Users[_configuration.MailBox].MailFolders[_incoming_folder.Id].Messages.Request().Header("Prefer", "outlook.body-content-type=\"text\"").Filter(_filter).GetAsync();
+                        while (_messages != null)
                         {
-                            await OnMessageReceivedAsync(_message);
+                            foreach (Message _message in _messages)
+                            {
+                                await OnMessageReceivedAsync(_message);
+                            }
+                            if (_messages.NextPageRequest != null)
+                                _messages = await _messages.NextPageRequest.Header("Prefer", "outlook.body-content-type=\"text\"").Filter(_filter).GetAsync();
+                            else
+                                _messages = null;
                         }
-
                     }
                     catch (Exception _ex)
                     {
