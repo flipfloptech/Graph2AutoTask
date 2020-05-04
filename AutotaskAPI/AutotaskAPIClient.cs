@@ -22,6 +22,7 @@ namespace AutotaskPSA
         private GetFieldInfoResponse ticket_fieldInfo = null;
         private GetFieldInfoResponse ticketNote_fieldInfo = null;
         private GetFieldInfoResponse attachmentInfo_fieldInfo = null;
+        private List<AllocationCode> allocationCodes_WorkType = new List<AllocationCode>();
         private const string _AT_TicketRegEx = "^[T][0-9]{8}[.][0-9]{4}$";
         public AutotaskAPIClient(string Username, string Password, AutotaskIntegrationKey IntegrationKey)
         {
@@ -110,6 +111,7 @@ namespace AutotaskPSA
                 ticket_fieldInfo = _atwsServicesClient.GetFieldInfo(new GetFieldInfoRequest(_atwsIntegrations, "Ticket"));
                 ticketNote_fieldInfo = _atwsServicesClient.GetFieldInfo(new GetFieldInfoRequest(_atwsIntegrations, "TicketNote"));
                 attachmentInfo_fieldInfo = _atwsServicesClient.GetFieldInfo(new GetFieldInfoRequest(_atwsIntegrations, "AttachmentInfo"));
+                allocationCodes_WorkType = UpdateUseTypeOneAllocationCodes();
             }
             catch
             {
@@ -220,10 +222,10 @@ namespace AutotaskPSA
             }
             return _result;
         }
-        public Ticket CreateTicket(Account Account, Contact Contact, string Title, string Description, DateTimeOffset DueDate, string Source, string Status, string Priority, string Queue)
+        public Ticket CreateTicket(Account Account, Contact Contact, string Title, string Description, DateTimeOffset DueDate, string Source, string Status, string Priority, string Queue, string WorkType)
         {
             Ticket _result = null;
-            if (Account == null || DueDate == null || string.IsNullOrWhiteSpace(Title) || string.IsNullOrWhiteSpace(Description) || string.IsNullOrWhiteSpace(Source) || string.IsNullOrWhiteSpace(Status) || string.IsNullOrWhiteSpace(Priority) || string.IsNullOrWhiteSpace(Queue))
+            if (Account == null || DueDate == null || string.IsNullOrWhiteSpace(Title) || string.IsNullOrWhiteSpace(Description) || string.IsNullOrWhiteSpace(Source) || string.IsNullOrWhiteSpace(Status) || string.IsNullOrWhiteSpace(Priority) || string.IsNullOrWhiteSpace(Queue) || string.IsNullOrWhiteSpace(WorkType))
             {
                 throw new ArgumentNullException();
             }
@@ -238,6 +240,7 @@ namespace AutotaskPSA
                     Status = Convert.ToInt32(PickListValueFromField(ticket_fieldInfo.GetFieldInfoResult, "Status", Status)),
                     QueueID = Convert.ToInt32(PickListValueFromField(ticket_fieldInfo.GetFieldInfoResult, "QueueID", Queue)),
                     Source = Convert.ToInt32(PickListValueFromField(ticket_fieldInfo.GetFieldInfoResult, "Source", Source)),
+                    AllocationCodeID = allocationCodes_WorkType.Exists(_code => Convert.ToString(_code.Name) == WorkType) ? allocationCodes_WorkType.First(_code => Convert.ToString(_code.Name) == WorkType).id : new long?(),
                     ContactID = (Contact != null) ? Convert.ToInt32(Contact.id) : new int?(), // ternary null bug work around: new int?()
                     Title = Title.Substring(0, Title.Length > 255 ? 255 : Title.Length),
                     Description = Description.Substring(0, Description.Length > 8000 ? 8000 : Description.Length),
@@ -383,6 +386,32 @@ namespace AutotaskPSA
             }
             return _result;
         }
+
+        private List<AllocationCode> UpdateUseTypeOneAllocationCodes()
+        {
+            List<AllocationCode> _result = null;
+
+            StringBuilder strResource = new StringBuilder();
+            strResource.Append("<queryxml version=\"1.0\">");
+            strResource.Append("<entity>AllocationCode</entity>");
+            strResource.Append("<query>");
+            strResource.Append("<condition><field>UseType<expression op=\"equals\">");
+            strResource.Append(Convert.ToString(1));
+            strResource.Append("</expression></field></condition>");
+            strResource.Append("</query></queryxml>");
+
+            queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
+
+            if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+            {
+                _result = new List<AllocationCode>(Array.ConvertAll(respResource.queryResult.EntityResults, new Converter<Entity, AllocationCode>(EntityToAllocationCode)));
+            }
+            return _result;
+        }
+        private AllocationCode EntityToAllocationCode(Entity _entity)
+        {
+            return (AllocationCode)_entity;
+        }
         public Ticket FindTicketByNumber(string ticketNumber)
         {
             Ticket _result = null;
@@ -398,7 +427,7 @@ namespace AutotaskPSA
 
             StringBuilder strResource = new StringBuilder();
             strResource.Append("<queryxml version=\"1.0\">");
-            strResource.Append("<entity>Ticket</entity>");
+            strResource.Append("<entity>AllocationCode</entity>");
             strResource.Append("<query>");
             strResource.Append("<field>TicketNumber<expression op=\"equals\">");
             strResource.Append(Convert.ToString(ticketNumber));

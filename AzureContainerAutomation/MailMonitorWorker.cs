@@ -389,7 +389,7 @@ namespace AzureContainerAutomation
                 try
                 {
                     byteRateLimiting(message.Subject.Length+message.Body.Content.Length);
-                    Ticket _CreatedTicket = _atwsAPIClient.CreateTicket(_MsgSenderAccount, _MsgSender, message.Subject, message.Body.Content, (DateTime.Now + _configuration.Autotask.Defaults.Ticket.DueDateOffset), _configuration.Autotask.Defaults.Ticket.Source, _configuration.Autotask.Defaults.Ticket.Status, _configuration.Autotask.Defaults.Ticket.Priority, _configuration.Autotask.Defaults.Ticket.Queue);
+                    Ticket _CreatedTicket = _atwsAPIClient.CreateTicket(_MsgSenderAccount, _MsgSender, message.Subject, message.Body.Content, (DateTime.Now + _configuration.Autotask.Defaults.Ticket.DueDateOffset), _configuration.Autotask.Defaults.Ticket.Source, _configuration.Autotask.Defaults.Ticket.Status, _configuration.Autotask.Defaults.Ticket.Priority, _configuration.Autotask.Defaults.Ticket.Queue,_configuration.Autotask.Defaults.Ticket.WorkType);
                     if (_CreatedTicket != null && !string.IsNullOrWhiteSpace((string)_CreatedTicket.TicketNumber))
                     {
                         _result = _CreatedTicket;
