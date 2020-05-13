@@ -427,7 +427,7 @@ namespace AutotaskPSA
 
             StringBuilder strResource = new StringBuilder();
             strResource.Append("<queryxml version=\"1.0\">");
-            strResource.Append("<entity>AllocationCode</entity>");
+            strResource.Append("<entity>Ticket</entity>");
             strResource.Append("<query>");
             strResource.Append("<field>TicketNumber<expression op=\"equals\">");
             strResource.Append(Convert.ToString(ticketNumber));
