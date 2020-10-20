@@ -24,6 +24,7 @@ namespace AutotaskPSA
         private GetFieldInfoResponse attachmentInfo_fieldInfo = null;
         private List<AllocationCode> allocationCodes_WorkType = new List<AllocationCode>();
         private const string _AT_TicketRegEx = "^[T][0-9]{8}[.][0-9]{4}$";
+        
         public AutotaskAPIClient(string Username, string Password, AutotaskIntegrationKey IntegrationKey)
         {
             if (string.IsNullOrWhiteSpace(Username))
@@ -179,11 +180,14 @@ namespace AutotaskPSA
         public TicketNote CreateTicketNote(Ticket Ticket, Resource ImpersonateResource, string Title, string Description, string Type, string Publish)
         {
             TicketNote _result = null;
-            if (Ticket == null || string.IsNullOrWhiteSpace(Title) || string.IsNullOrWhiteSpace(Description) || string.IsNullOrWhiteSpace(Type) || string.IsNullOrWhiteSpace(Publish))
+            if (String.IsNullOrWhiteSpace(Title))
+                Title = "Empty subject line";
+            if (string.IsNullOrWhiteSpace(Description))
+                Description = "Empty message contents";
+            if (Ticket == null || string.IsNullOrWhiteSpace(Type) || string.IsNullOrWhiteSpace(Publish))
             {
                 throw new ArgumentNullException();
             }
-
             try
             {
                 _result = new TicketNote()
@@ -210,9 +214,11 @@ namespace AutotaskPSA
                     _atwsIntegrations.ImpersonateAsResourceID = 0;
                     _atwsIntegrations.ImpersonateAsResourceIDSpecified = false;
                     if (_response.createResult.ReturnCode > 0 && _response.createResult.EntityResults.Length > 0)
-                    {
                         _result = (TicketNote)_response.createResult.EntityResults[0];
-                    }
+                    else if(_response.createResult.ReturnCode <= 0 && _response.createResult.EntityResults.Length == 0 && _response.createResult.Errors.Count() > 0)
+                        throw new CommunicationException(_response.createResult.Errors[0].Message);
+                    else
+                        throw new CommunicationException("AutotaskAPIClient.CreateTicketNote() UNKNOWN ERROR");
                 }
             }
             catch (Exception _ex)
@@ -225,7 +231,11 @@ namespace AutotaskPSA
         public Ticket CreateTicket(Account Account, Contact Contact, string Title, string Description, DateTimeOffset DueDate, string Source, string Status, string Priority, string Queue, string WorkType)
         {
             Ticket _result = null;
-            if (Account == null || DueDate == null || string.IsNullOrWhiteSpace(Title) || string.IsNullOrWhiteSpace(Description) || string.IsNullOrWhiteSpace(Source) || string.IsNullOrWhiteSpace(Status) || string.IsNullOrWhiteSpace(Priority) || string.IsNullOrWhiteSpace(Queue) || string.IsNullOrWhiteSpace(WorkType))
+            if (String.IsNullOrWhiteSpace(Title))
+                Title = "Empty subject line";
+            if (string.IsNullOrWhiteSpace(Description))
+                Description = "Empty message contents";
+            if (Account == null || DueDate == null || string.IsNullOrWhiteSpace(Source) || string.IsNullOrWhiteSpace(Status) || string.IsNullOrWhiteSpace(Priority) || string.IsNullOrWhiteSpace(Queue) || string.IsNullOrWhiteSpace(WorkType))
             {
                 throw new ArgumentNullException();
             }
@@ -257,9 +267,11 @@ namespace AutotaskPSA
                 {
                     createResponse _response = _atwsServicesClient.create(new createRequest(_atwsIntegrations, new Entity[] { _result }));
                     if (_response.createResult.ReturnCode > 0 && _response.createResult.EntityResults.Length > 0)
-                    {
                         _result = (Ticket)_response.createResult.EntityResults[0];
-                    }
+                    else if (_response.createResult.ReturnCode <= 0 && _response.createResult.EntityResults.Length == 0 && _response.createResult.Errors.Count() > 0)
+                        throw new CommunicationException(_response.createResult.Errors[0].Message);
+                    else
+                        throw new CommunicationException("AutotaskAPIClient.CreateTicketNote() UNKNOWN ERROR");
                 }
             }
             catch (Exception _ex)
@@ -415,6 +427,7 @@ namespace AutotaskPSA
         public Ticket FindTicketByNumber(string ticketNumber)
         {
             Ticket _result = null;
+            StringBuilder strResource = new StringBuilder();
             if (string.IsNullOrWhiteSpace(ticketNumber))
             {
                 throw new ArgumentNullException();
@@ -424,23 +437,28 @@ namespace AutotaskPSA
             {
                 throw new ArgumentException();
             }
-
-            StringBuilder strResource = new StringBuilder();
-            strResource.Append("<queryxml version=\"1.0\">");
-            strResource.Append("<entity>Ticket</entity>");
-            strResource.Append("<query>");
-            strResource.Append("<field>TicketNumber<expression op=\"equals\">");
-            strResource.Append(Convert.ToString(ticketNumber));
-            strResource.Append("</expression></field>");
-            strResource.Append("</query></queryxml>");
-
-            queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
-
-            if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+            try
             {
-                _result = (Ticket)respResource.queryResult.EntityResults[0];
+                strResource.Append("<queryxml version=\"1.0\">");
+                strResource.Append("<entity>Ticket</entity>");
+                strResource.Append("<query>");
+                strResource.Append("<field>TicketNumber<expression op=\"equals\">");
+                strResource.Append(Convert.ToString(ticketNumber));
+                strResource.Append("</expression></field>");
+                strResource.Append("</query></queryxml>");
+
+                queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
+
+                if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+                {
+                    _result = (Ticket)respResource.queryResult.EntityResults[0];
+                }
+                return _result;
             }
-            return _result;
+            catch(Exception _ex)
+            {
+                throw new Exception("AutotaskAPIClient.FindTicketByNumber",_ex);
+            }
         }
 
         public Resource FindResource(string resourceUserName)
@@ -470,55 +488,65 @@ namespace AutotaskPSA
         public Resource FindResourceByEmail(string resourceEmail)
         {
             Resource _result = null;
-
             // Query Resource to get the owner of the lead
             StringBuilder strResource = new StringBuilder();
-            strResource.Append("<queryxml version=\"1.0\">");
-            strResource.Append("<entity>Resource</entity>");
-            strResource.Append("<query>");
-            strResource.Append("<field>Email<expression op=\"equals\">");
-            strResource.Append(resourceEmail);
-            strResource.Append("</expression></field>");
-            strResource.Append("</query></queryxml>");
+            try { 
+                strResource.Append("<queryxml version=\"1.0\">");
+                strResource.Append("<entity>Resource</entity>");
+                strResource.Append("<query>");
+                strResource.Append("<field>Email<expression op=\"equals\">");
+                strResource.Append(resourceEmail);
+                strResource.Append("</expression></field>");
+                strResource.Append("</query></queryxml>");
 
-            queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
+                queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
 
-            if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
-            {
-                // Get the ID for the resource
-                _result = (Resource)respResource.queryResult.EntityResults[0];
+                if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+                {
+                    // Get the ID for the resource
+                    _result = (Resource)respResource.queryResult.EntityResults[0];
+                }
+
+                return _result;
             }
-
-            return _result;
+            catch (Exception _ex)
+            {
+                throw new Exception("AutotaskAPIClient.FindResourceByEmail", _ex);
+            }
         }
 
         public Contact FindContactByEmail(string contactEmail)
         {
             Contact _result = null;
-
             // Query Resource to get the owner of the lead
             StringBuilder strResource = new StringBuilder();
-            strResource.Append("<queryxml version=\"1.0\">");
-            strResource.Append("<entity>Contact</entity>");
-            strResource.Append("<query>");
-            strResource.Append("<field>EMailAddress<expression op=\"equals\">");
-            strResource.Append(contactEmail);
-            strResource.Append("</expression></field>");
-            strResource.Append("</query></queryxml>");
-
-            queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
-
-            if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+            try
             {
-                _result = (Contact)respResource.queryResult.EntityResults[0];
-            }
+                strResource.Append("<queryxml version=\"1.0\">");
+                strResource.Append("<entity>Contact</entity>");
+                strResource.Append("<query>");
+                strResource.Append("<field>EMailAddress<expression op=\"equals\">");
+                strResource.Append(contactEmail);
+                strResource.Append("</expression></field>");
+                strResource.Append("</query></queryxml>");
 
-            return _result;
+                queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
+
+                if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+                {
+                    _result = (Contact)respResource.queryResult.EntityResults[0];
+                }
+
+                return _result;
+            }
+            catch (Exception _ex)
+            {
+                throw new Exception("AutotaskAPIClient.FindContactByEmail", _ex);
+            }
         }
         public Contact FindFirstContactByDomain(string emailDomain)
         {
             Contact _result = null;
-
             // Query Resource to get the owner of the lead
             StringBuilder strResource = new StringBuilder();
             strResource.Append("<queryxml version=\"1.0\">");
@@ -542,48 +570,60 @@ namespace AutotaskPSA
         public Account FindAccountByID(int AccountID)
         {
             Account _result = null;
-
             // Query Resource to get the owner of the lead
             StringBuilder strResource = new StringBuilder();
-            strResource.Append("<queryxml version=\"1.0\">");
-            strResource.Append("<entity>Account</entity>");
-            strResource.Append("<query>");
-            strResource.Append("<field>id<expression op=\"equals\">");
-            strResource.Append(Convert.ToString(AccountID));
-            strResource.Append("</expression></field>");
-            strResource.Append("</query></queryxml>");
-
-            queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
-
-            if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+            try
             {
-                _result = (Account)respResource.queryResult.EntityResults[0];
-            }
+                strResource.Append("<queryxml version=\"1.0\">");
+                strResource.Append("<entity>Account</entity>");
+                strResource.Append("<query>");
+                strResource.Append("<field>id<expression op=\"equals\">");
+                strResource.Append(Convert.ToString(AccountID));
+                strResource.Append("</expression></field>");
+                strResource.Append("</query></queryxml>");
 
-            return _result;
+                queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
+
+                if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+                {
+                    _result = (Account)respResource.queryResult.EntityResults[0];
+                }
+
+                return _result;
+            }
+            catch (Exception _ex)
+            {
+                throw new Exception("AutotaskAPIClient.FindAccountByID", _ex);
+            }
         }
 
         public Account FindAccountByName(string AccountName)
         {
             Account _result = null;
-
             StringBuilder strResource = new StringBuilder();
-            strResource.Append("<queryxml version=\"1.0\">");
-            strResource.Append("<entity>Account</entity>");
-            strResource.Append("<query>");
-            strResource.Append("<field>AccountName<expression op=\"equals\">");
-            strResource.Append(AccountName);
-            strResource.Append("</expression></field>");
-            strResource.Append("</query></queryxml>");
-
-            queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
-
-            if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+            try
             {
-                _result = (Account)respResource.queryResult.EntityResults[0];
-            }
+                strResource.Append("<queryxml version=\"1.0\">");
+                strResource.Append("<entity>Account</entity>");
+                strResource.Append("<query>");
+                strResource.Append("<field>AccountName<expression op=\"equals\">");
+                strResource.Append(AccountName);
+                strResource.Append("</expression></field>");
+                strResource.Append("</query></queryxml>");
 
-            return _result;
+                queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
+
+                if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+                {
+                    _result = (Account)respResource.queryResult.EntityResults[0];
+                }
+
+                return _result;
+            }
+            catch (Exception _ex)
+            {
+                throw new Exception("AutotaskAPIClient.FindAccountByName", _ex);
+            }
         }
 
         public Account FindAccountByDomain(string emailDomain)
@@ -593,45 +633,52 @@ namespace AutotaskPSA
             Account _result = null;
             // Query Resource to get the owner of the lead
             StringBuilder strResource = new StringBuilder();
-            strResource.Append("<queryxml version=\"1.0\">");
-            strResource.Append("<entity>Contact</entity>");
-            strResource.Append("<query>");
-            strResource.Append("<field>EMailAddress<expression op=\"contains\">");
-            strResource.Append(emailDomain);
-            strResource.Append("</expression></field>");
-            strResource.Append("</query></queryxml>");
-
-            queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
-
-            if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+            try
             {
-                int _total = respResource.queryResult.EntityResults.Count();
+                strResource.Append("<queryxml version=\"1.0\">");
+                strResource.Append("<entity>Contact</entity>");
+                strResource.Append("<query>");
+                strResource.Append("<field>EMailAddress<expression op=\"contains\">");
+                strResource.Append(emailDomain);
+                strResource.Append("</expression></field>");
+                strResource.Append("</query></queryxml>");
 
-                System.Threading.Tasks.Parallel.ForEach(respResource.queryResult.EntityResults, (_contact) =>
+                queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
+
+                if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
                 {
-                    lock (_counts)
+                    int _total = respResource.queryResult.EntityResults.Count();
+
+                    System.Threading.Tasks.Parallel.ForEach(respResource.queryResult.EntityResults, (_contact) =>
                     {
-                        if (_counts.ContainsKey((int)((Contact)_contact).AccountID))
+                        lock (_counts)
                         {
-                            _counts[(int)((Contact)_contact).AccountID]++;
+                            if (_counts.ContainsKey((int)((Contact)_contact).AccountID))
+                            {
+                                _counts[(int)((Contact)_contact).AccountID]++;
+                            }
+                            else
+                            {
+                                _counts.Add((int)((Contact)_contact).AccountID, 1);
+                                _statistics.Add((int)((Contact)_contact).AccountID, 0);
+                            }
                         }
-                        else
-                        {
-                            _counts.Add((int)((Contact)_contact).AccountID, 1);
-                            _statistics.Add((int)((Contact)_contact).AccountID, 0);
-                        }
-                    }
-                });
-                System.Threading.Tasks.Parallel.ForEach(_counts, (_count) =>
-                {
-                    _statistics[_count.Key] = Math.Round(((_count.Value / _total) * 100), 3);
-                });
+                    });
+                    System.Threading.Tasks.Parallel.ForEach(_counts, (_count) =>
+                    {
+                        _statistics[_count.Key] = Math.Round(((_count.Value / _total) * 100), 3);
+                    });
 
-                int _AccountID = _statistics.OrderBy(key => key.Value).Reverse().First().Key;
-                _result = FindAccountByID(_AccountID);
+                    int _AccountID = _statistics.OrderBy(key => key.Value).Reverse().First().Key;
+                    _result = FindAccountByID(_AccountID);
+                }
+
+                return _result;
             }
-
-            return _result;
+            catch (Exception _ex)
+            {
+                throw new Exception("AutotaskAPIClient.FindAccountByDomain", _ex);
+            }
         }
 
         protected internal static bool IsValidAutoTaskTicket(string ticketNumber)
