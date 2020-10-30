@@ -40,7 +40,7 @@ namespace Graph2AutoTask.ApiQueue
             lock (_jobs)
             {
                 _jobs.Enqueue(newJob);
-                _logger.LogInformation($"Worker({_configuration.MailBox}) Enqueued Job {newJob.ID} at: {DateTimeOffset.Now}");
+                _logger.LogInformation($"[{_configuration.MailBox}] - Enqueued Job {newJob.ID} at: {DateTimeOffset.Now}");
                 if (_currentthreads < _maxthreads)
                 {
                     _currentthreads++;
@@ -86,23 +86,23 @@ namespace Graph2AutoTask.ApiQueue
                 {
                     if (_job.RetryCount > 0)
                     {
-                        _logger.LogInformation($"Worker({_configuration.MailBox}) Delaying Job {_job.ID} at: {DateTimeOffset.Now} for: {_job.RetryDelay} reason: QUEUE_RETRY_DELAY");
+                        _logger.LogInformation($"[{_configuration.MailBox}] - Delaying Job {_job.ID} at: {DateTimeOffset.Now} for: {_job.RetryDelay} reason: QUEUE_RETRY_DELAY");
                         System.Threading.Thread.Sleep(_job.RetryDelay);
                     }
                     switch (_job.Execute())
                     {
                         case ApiQueueJobResult.QUEUE_SUCCESS:
                             //dequeue item
-                            _logger.LogInformation($"Worker({_configuration.MailBox}) Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_SUCCESS");
+                            _logger.LogInformation($"[{_configuration.MailBox}] - Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_SUCCESS");
                             break;
                         case ApiQueueJobResult.QUEUE_RETRY:
                             //leave for retry // wait
                             _jobs.Enqueue(_job);
-                            _logger.LogInformation($"Worker({_configuration.MailBox}) Requeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_RETRY[{_job.RetryCount}]");
+                            _logger.LogInformation($"[{_configuration.MailBox}] - Requeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_RETRY[{_job.RetryCount}]");
                             break;
                         case ApiQueueJobResult.QUEUE_FAILED:
                             //we retried x times, over x time and it still failed, 
-                            _logger.LogInformation($"Worker({_configuration.MailBox}) Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_FAIL_MAXRETRY");
+                            _logger.LogInformation($"[{_configuration.MailBox}] - Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_FAIL_MAXRETRY");
                             if (_job.Alertable)
                             {
                                 try
@@ -113,11 +113,11 @@ namespace Graph2AutoTask.ApiQueue
                                         Source = "AzureTicketProcessor",
                                         Message = $"There has been a critical failure in {_job.Task.Method.Name} reason: QUEUE_FAIL_MAXRETRY"
                                     }).GetAwaiter().GetResult();
-                                    _logger.LogInformation($"Worker({_configuration.MailBox}) Job {_job.ID} Sent OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
+                                    _logger.LogInformation($"[{_configuration.MailBox}] - Job {_job.ID} Sent OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
                                 }
                                 catch
                                 {
-                                    _logger.LogInformation($"Worker({_configuration.MailBox}) Job {_job.ID} Failed to Send OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
+                                    _logger.LogInformation($"[{_configuration.MailBox}] - Job {_job.ID} Failed to Send OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
                                 }
                             }
                             break;
