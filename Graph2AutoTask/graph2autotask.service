@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=notify
 ExecStart=/opt/graph2autotask/Graph2AutoTask/bin/Release/netcoreapp3.1/Graph2AutoTask
 User=autotask
-Group=autoask
+Group=autotask
 
 [Install]
 WantedBy=multi-user.target

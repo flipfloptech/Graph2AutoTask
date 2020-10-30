@@ -28,7 +28,7 @@
       {
         "Name": "File",
         "Args": {
-          "path": "./logs/",
+          "path": "/var/log/graph2autotask/",
           "rollingInterval": "Day",
           "fileSizeLimitBytes": null,
           "retainedFileCountLimit": 31,
