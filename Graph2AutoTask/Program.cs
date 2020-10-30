@@ -11,11 +11,11 @@ namespace Graph2AutoTask
     {
         public static void Main(string[] args)
         {
-            System.Console.WriteLine("Graph2AutoTask v2.0 Initializing...");
+            System.Console.WriteLine("Graph2AutoTask v2.0");
             System.Threading.Thread.CurrentThread.Name = "main";
             try
             {
-                System.Console.WriteLine("[LOGGING] System Initializing...");
+                System.Console.WriteLine("[LOGGING] Initializing");
                 IConfigurationRoot _logConfig = new ConfigurationBuilder()
                     .SetBasePath(System.IO.Directory.GetCurrentDirectory())
                     .AddJsonFile("serilog.json")
@@ -23,11 +23,11 @@ namespace Graph2AutoTask
                 Log.Logger = new LoggerConfiguration()
                     .ReadFrom.Configuration(_logConfig)
                     .CreateLogger();
-                System.Console.WriteLine("[LOGGING] System Initialized");
+                System.Console.WriteLine("[LOGGING] Initialized");
             }
             catch(System.Exception _ex)
             {
-                System.Console.WriteLine("[LOGGING] System initalization failure. Contact developer.");
+                System.Console.WriteLine("[LOGGING] Initialization Failed! Contact developer.");
                 return;
             }
             try { 
