@@ -49,7 +49,7 @@ namespace Graph2AutoTask
         {
             try
             {
-                _internal = (Dictionary<string, mimeTypeInfo>)JsonConvert.DeserializeObject<Dictionary<string, mimeTypeInfo>>(System.IO.File.ReadAllText(@".\mimetypes.json"));
+                _internal = (Dictionary<string, mimeTypeInfo>)JsonConvert.DeserializeObject<Dictionary<string, mimeTypeInfo>>(System.IO.File.ReadAllText($"{System.IO.Path.GetDirectoryName(new System.Uri(System.Reflection.Assembly.GetExecutingAssembly().CodeBase).LocalPath)}/configs/mimetypes.json"));
                 _external.Clear();
                 Parallel.ForEach(_internal, (_mimeType, state) =>
                  {
