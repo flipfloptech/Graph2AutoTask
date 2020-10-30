@@ -709,7 +709,7 @@ namespace Graph2AutoTask
                         Exception _included = _ex;
                         if (_ex.InnerException != null)
                             _included = _ex.InnerException;
-                        _logger.LogInformation($"[{_configuration.MailBox}] - ERRORITEM - queue_GetMessageAttachments({_internal.ID})");
+                        _logger.LogError(_included,$"[{_configuration.MailBox}] - ERRORITEM - queue_GetMessageAttachments({_internal.ID})");
                     }
                 }
                 if (_Attachments.NextPageRequest != null)
