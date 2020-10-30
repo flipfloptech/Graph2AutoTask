@@ -26,10 +26,10 @@
     <ProjectReference Include="..\OpsGenieAPICore\OpsGenieAPICore.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Content Update="appsettings.Development.json">
+    <Content Update="configs\appsettings.Development.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Update="appsettings.json">
+    <Content Update="configs\appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

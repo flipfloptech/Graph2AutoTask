@@ -7,12 +7,6 @@
       },
       "remoteDebugEnabled": false
     },
-    "Docker": {
-      "commandName": "Docker",
-      "environmentVariables": {
-        "DOTNET_ENVIRONMENT": "Production"
-      }
-    },
     "WSL 2": {
       "commandName": "WSL2",
       "environmentVariables": {
