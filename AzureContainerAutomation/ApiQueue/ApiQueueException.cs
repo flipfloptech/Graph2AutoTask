@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace AzureContainerAutomation.ApiQueue
+namespace Graph2AutoTask.ApiQueue
 {
     public class ApiQueueException : Exception
     {

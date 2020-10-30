@@ -7,7 +7,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace AzureContainerAutomation
+namespace Graph2AutoTask
 {
     public class MsalAuthenticationProvider : IAuthenticationProvider
     {

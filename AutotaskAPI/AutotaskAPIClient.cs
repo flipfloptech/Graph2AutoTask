@@ -121,10 +121,70 @@ namespace AutotaskPSA
             return true;
         }
 
-        public Attachment CreateTicketAttachment(Ticket ParentTicket, string Title, byte[] Data, string Publish)
+        public Attachment CreateTicketNoteAttachment(TicketNote ParentTicketNote, Resource ImpersonateResource, string Title, byte[] Data, string Publish)
         {
             Attachment _result = null;
-            if (ParentTicket == null || string.IsNullOrWhiteSpace(Title) || (Data == null || Data.Length <= 0 || Data.Length > 6000000) || string.IsNullOrWhiteSpace(Publish))
+            if (string.IsNullOrWhiteSpace(Title))
+                Title = "No Name";
+            if (ParentTicketNote == null || (Data == null || Data.Length <= 0 || Data.Length > 6000000) || string.IsNullOrWhiteSpace(Publish))
+            {
+                throw new ArgumentNullException();
+            }
+
+            try
+            {
+                _result = new Attachment()
+                {
+                    Info = new AttachmentInfo()
+                    {
+                        Type = "FILE_ATTACHMENT",
+                        ParentType = 23,
+                        ParentID = ParentTicketNote.id,
+                        FullPath = Title.Substring(0, Title.Length > 255 ? 255 : Title.Length),
+                        Title = Title.Substring(0, Title.Length > 255 ? 255 : Title.Length),
+                        Publish = Convert.ToInt32(PickListValueFromField(attachmentInfo_fieldInfo.GetFieldInfoResult, "Publish", Publish)),
+                    },
+                    Data = Data
+                };
+            }
+            catch (Exception _ex)
+            {
+                _result = null;
+                throw new ArgumentException("Unable to build attachment request. Please review InnerException.", _ex);
+            }
+            try
+            {
+                if (_result != null)
+                {
+                    _atwsIntegrations.ImpersonateAsResourceID = ImpersonateResource != null ? (int)ImpersonateResource.id : 0;
+                    _atwsIntegrations.ImpersonateAsResourceIDSpecified = _atwsIntegrations.ImpersonateAsResourceID == 0 ? false : true;
+                    CreateAttachmentResponse _createResponse = _atwsServicesClient.CreateAttachment(new CreateAttachmentRequest(_atwsIntegrations, _result));
+                    _atwsIntegrations.ImpersonateAsResourceID = 0;
+                    _atwsIntegrations.ImpersonateAsResourceIDSpecified = false;
+                    if (_createResponse.CreateAttachmentResult > 0)
+                    {
+                        GetAttachmentResponse _getResponse = _atwsServicesClient.GetAttachment(new GetAttachmentRequest(_atwsIntegrations, _createResponse.CreateAttachmentResult));
+                        if (_getResponse.GetAttachmentResult != null)
+                            _result = _getResponse.GetAttachmentResult;
+                        else
+                            throw new CommunicationException("AutotaskAPIClient.CreateTickeNoteAttachment() UNKNOWN ERROR");
+                    }
+                }
+            }
+            catch (Exception _ex)
+            {
+                _result = null;
+                throw new CommunicationException("Unable to create ticket note attachment. Please review InnerException.", _ex);
+            }
+            return _result;
+        }
+
+        public Attachment CreateTicketAttachment(Ticket ParentTicket, Resource ImpersonateResource, string Title, byte[] Data, string Publish)
+        {
+            Attachment _result = null;
+            if (string.IsNullOrWhiteSpace(Title))
+                Title = "No Name";
+            if (ParentTicket == null || (Data == null || Data.Length <= 0 || Data.Length > 6000000) || string.IsNullOrWhiteSpace(Publish))
             {
                 throw new ArgumentNullException();
             }
@@ -149,31 +209,31 @@ namespace AutotaskPSA
             catch (Exception _ex)
             {
                 _result = null;
-                throw new ArgumentException("Unable to build attachment request. Please review InnerException.", _ex);
+                throw new ArgumentException("Unable to build ticket attachment request. Please review InnerException.", _ex);
             }
             try
             {
                 if (_result != null)
                 {
+                    _atwsIntegrations.ImpersonateAsResourceID = ImpersonateResource != null ? (int)ImpersonateResource.id : 0;
+                    _atwsIntegrations.ImpersonateAsResourceIDSpecified = _atwsIntegrations.ImpersonateAsResourceID == 0 ? false : true;
                     CreateAttachmentResponse _createResponse = _atwsServicesClient.CreateAttachment(new CreateAttachmentRequest(_atwsIntegrations, _result));
+                    _atwsIntegrations.ImpersonateAsResourceID = 0;
+                    _atwsIntegrations.ImpersonateAsResourceIDSpecified = false;
                     if (_createResponse.CreateAttachmentResult > 0)
-                    {
+                    { 
                         GetAttachmentResponse _getResponse = _atwsServicesClient.GetAttachment(new GetAttachmentRequest(_atwsIntegrations, _createResponse.CreateAttachmentResult));
                         if (_getResponse.GetAttachmentResult != null)
-                        {
                             _result = _getResponse.GetAttachmentResult;
-                        }
                         else
-                        {
-                            _result = null;
-                        }
+                            throw new CommunicationException("AutotaskAPIClient.CreateTickeAttachment() UNKNOWN ERROR");
                     }
                 }
             }
             catch (Exception _ex)
             {
                 _result = null;
-                throw new CommunicationException("Unable to create attachment. Please review InnerException.", _ex);
+                throw new CommunicationException("Unable to create ticket attachment. Please review InnerException.", _ex);
             }
             return _result;
         }

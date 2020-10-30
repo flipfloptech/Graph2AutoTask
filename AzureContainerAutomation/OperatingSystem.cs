@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace AzureContainerAutomation
+namespace Graph2AutoTask
 {
     public static class OperatingSystem
     {

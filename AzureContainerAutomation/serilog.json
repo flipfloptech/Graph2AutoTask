@@ -1,0 +1,62 @@
+﻿{
+  "Serilog": {
+    "Using": [
+      "Serilog.Sinks.Console",
+      "Serilog.Sinks.File",
+      "Serilog.Enrichers.Environment",
+      "Serilog.Enrichers.Process",
+      "Serilog.Enrichers.Thread"
+    ],
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Microsoft": "Warning",
+        "System": "Warning"
+      }
+    },
+    "Properties": {
+      "Application": "Graph2AutoTask"
+    },
+    "WriteTo": [
+      {
+        "Name": "Console",
+        "Args": {
+          "theme": "Serilog.Sinks.SystemConsole.Themes.SystemConsoleTheme::Grayscale, Serilog.Sinks.Console",
+          "outputTemplate": "[{Timestamp:HH:mm:ss}] [{Level}] {Message}{NewLine}{Exception}"
+        }
+      },
+      {
+        "Name": "File",
+        "Args": {
+          "path": "./logs/",
+          "rollingInterval": "Day",
+          "fileSizeLimitBytes": null,
+          "retainedFileCountLimit": 31,
+          "outputTemplate": "[{Timestamp:o}] [{Level:u3}] [{ProcessId}/{MachineName}/{ThreadId}/{ThreadName}] {Message}{NewLine}{Exception}"
+        }
+      }
+    ],
+    "Enrich": [
+      "WithMachineName",
+      "WithProcessId",
+      "WithThreadId",
+      "WithThreadName"
+      ]
+      ,
+      "Destructure":
+      [
+        {
+          "Name": "ToMaximumDepth",
+          "Args": { "maximumDestructuringDepth": 4 }
+        },
+        {
+          "Name": "ToMaximumStringLength",
+          "Args": { "maximumStringLength": 100 }
+        },
+        {
+          "Name": "ToMaximumCollectionCount",
+          "Args": { "maximumCollectionCount": 10 }
+        }
+      ]
+  }
+}

@@ -1,16 +1,24 @@
 {
   "profiles": {
-    "AzureContainerAutomation": {
+    "Graph2AutoTask": {
       "commandName": "Project",
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Production"
-      }
+      },
+      "remoteDebugEnabled": false
     },
     "Docker": {
       "commandName": "Docker",
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Production"
       }
+    },
+    "WSL 2": {
+      "commandName": "WSL2",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Production"
+      },
+      "distributionName": ""
     }
   }
 }

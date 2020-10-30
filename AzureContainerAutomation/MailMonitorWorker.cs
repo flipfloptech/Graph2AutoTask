@@ -14,11 +14,12 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using AzureContainerAutomation.ApiQueue;
+using Graph2AutoTask.ApiQueue;
 using System.Collections.Generic;
 using OpsGenieApi;
+using SkiaSharp;
 
-namespace AzureContainerAutomation
+namespace Graph2AutoTask
 {
     public class MailMonitorWorker : BackgroundService
     {
@@ -29,14 +30,10 @@ namespace AzureContainerAutomation
         private readonly MailboxConfig _configuration = null;
         private readonly OpsGenieClient _opsGenieClient = new OpsGenieClient(new OpsGenieClientConfig() { ApiKey = "b70407d2-e7aa-416e-aeb3-41e60a323cb6" }, new OpsGenieSerializer());
         private ApiQueueManager _queueManager = null;
+        private MimeTypeDatabase _mimeDatabase = new MimeTypeDatabase();
         private MailFolder _incoming_folder = null;
         private MailFolder _processed_folder = null;
         private MailFolder _failed_folder = null;
-        private const int buffer_byteRateLimit = 200; // message bytes
-        private const long _byteRateLimit = 10000000;
-        private TimeSpan byteRateLimit_timer = new TimeSpan(0, 5, 0);
-        private long current_byteRateLimit = 0;
-        private DateTimeOffset _byteRateLimit_Reset_Time = DateTime.UtcNow;
 
         public MailMonitorWorker(ILogger<MailMonitorWorker> logger, MailboxConfig configuration)
         {
@@ -48,8 +45,7 @@ namespace AzureContainerAutomation
 
             _logger = logger;
             _configuration = configuration;
-
-            _logger.LogInformation("Worker({mailbox}) initializing at: {time}", _configuration.MailBox, DateTimeOffset.Now);
+            _logger.LogInformation($"[{_configuration.MailBox}] - initializing");
             try
             {
                 _confidentialClientApplication = ConfidentialClientApplicationBuilder.Create(_configuration.Graph.ClientID)
@@ -64,11 +60,11 @@ namespace AzureContainerAutomation
                     throw new NullReferenceException("Check graph permissions, connectivity, names. Unable to setup mail folders.");
                 }
 
-                _logger.LogInformation("Worker({mailbox}) initialized at: {time}", _configuration.MailBox, DateTimeOffset.Now);
+                _logger.LogInformation($"[{_configuration.MailBox}] - initialized");
             }
             catch (Exception _ex)
             {
-                _logger.LogError(_ex, "Worker({mailbox}) failed initializing at: {time}", _configuration.MailBox, DateTimeOffset.Now);
+                _logger.LogError(_ex, $"[{_configuration.MailBox}] - failed initializing");
                 throw new InvalidOperationException();
             }
         }
@@ -141,11 +137,11 @@ namespace AzureContainerAutomation
         }
         protected override async System.Threading.Tasks.Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Worker({mailbox}) started at: {time}", _configuration.MailBox, DateTimeOffset.Now);
-            _queueManager = new ApiQueueManager(stoppingToken);
+            _logger.LogInformation($"[{_configuration.MailBox}] - started execution");
+            _queueManager = new ApiQueueManager(stoppingToken, _configuration, _logger, _opsGenieClient);
             while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogInformation("Worker({mailbox}) started mailbox processing at: {time}", _configuration.MailBox, DateTimeOffset.Now);
+                _logger.LogInformation($"[{_configuration.MailBox}] - started mailbox processing");
                 string _filter = string.Empty;
                 if (_configuration.Processing.UnreadOnly)
                 {
@@ -154,7 +150,7 @@ namespace AzureContainerAutomation
 
                 if (IsValidEmail(_configuration.MailBox))
                 {
-                    _logger.LogInformation("Worker({mailbox}) processing mailbox: {mailbox} at: {time}", _configuration.MailBox, _configuration.MailBox, DateTimeOffset.Now);
+                    _logger.LogInformation($"[{_configuration.MailBox}] - processing mailbox");
                     try
                     {
                         IMailFolderMessagesCollectionPage _messages = await _graphAPIClient.Users[_configuration.MailBox].MailFolders[_incoming_folder.Id].Messages.Request().Header("Prefer", "outlook.body-content-type=\"text\"").Filter(_filter).GetAsync();
@@ -172,20 +168,20 @@ namespace AzureContainerAutomation
                     }
                     catch (Exception _ex)
                     {
-                        _logger.LogError(_ex, "Worker({mailbox}) ERROR processing mailbox: {mailbox} at: {time}", _configuration.MailBox, _configuration.MailBox, DateTimeOffset.Now);
+                        _logger.LogError(_ex, $"[{_configuration.MailBox}] - ERROR processing mailbox");
                     }
                 }
-                _logger.LogInformation("Worker({mailbox}) mailbox processing completed at: {time}", _configuration.MailBox, DateTimeOffset.Now);
+                _logger.LogInformation($"[{_configuration.MailBox}] - mailbox processing completed");
                 await System.Threading.Tasks.Task.Delay(_configuration.Processing.CheckDelay, stoppingToken);
             }
-            _logger.LogInformation("Worker({mailbox}) Shutdown at: {time}", _configuration.MailBox, DateTimeOffset.Now);
+            _logger.LogInformation($"[{_configuration.MailBox}] - shutdown");
         }
         private void queue_FindTicketByNumber(Dictionary<string, object> _arguments)
         {
             InternalMessage _internal = (InternalMessage)_arguments["message"];
             Ticket _ExistingTicket = null;
             string _ExistingTicketNumber = ExtractTicketNumber(_internal.Message.Subject);
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_FindTicketByNumber({_internal.ID}, {DateTimeOffset.Now})");
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_FindTicketByNumber({_internal.ID})");
             if (!string.IsNullOrWhiteSpace(_ExistingTicketNumber))
             {
                 try
@@ -197,13 +193,13 @@ namespace AzureContainerAutomation
                     Exception _included = _ex;
                     if (_ex.InnerException != null)
                         _included = _ex.InnerException;
-                    _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_FindTicketByNumber({_internal.ID}, {DateTimeOffset.Now})");
+                    _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_FindTicketByNumber({_internal.ID})");
                     throw new ApiQueueException($"queue_FindTicketByNumber({_internal.ID})", _included);
                 }
             }
             if (_ExistingTicket != null)
             {
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_FindTicketByNumber({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindTicketByNumber({_internal.ID})");
                 //create a ticket note by first seeing if the sender is a resource!
                 _arguments.Add("ticket", _ExistingTicket);
                 ApiQueueJob _findResourceByEmail = new ApiQueueJob(_internal.ID, queue_FindResourceByEmail, _arguments, 5, new TimeSpan(0, 1, 0));
@@ -212,7 +208,7 @@ namespace AzureContainerAutomation
             else
             {
                 //create a ticket - start by finding a sender account by email
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_FindTicketByNumber({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_FindTicketByNumber({_internal.ID})");
                 ApiQueueJob _findContactByEmail = new ApiQueueJob(_internal.ID, queue_FindContactByEmail, _arguments, 5, new TimeSpan(0, 1, 0));
                 _queueManager.Enqueue(_findContactByEmail);
             }
@@ -221,7 +217,7 @@ namespace AzureContainerAutomation
         {
             InternalMessage _internal = (InternalMessage)_arguments["message"];
             AutotaskPSA.Contact _ExistingContact = null;
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_FindContactByEmail({_internal.ID}, {DateTimeOffset.Now})");
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_FindContactByEmail({_internal.ID})");
             try
             {
                 _ExistingContact = _atwsAPIClient.FindContactByEmail(_internal.Message.Sender.EmailAddress.Address);
@@ -231,13 +227,13 @@ namespace AzureContainerAutomation
                 Exception _included = _ex;
                 if (_ex.InnerException != null)
                     _included = _ex.InnerException;
-                _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_FindContactByEmail({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_FindContactByEmail({_internal.ID})");
                 throw new ApiQueueException($"queue_FindContactByEmail({_internal.ID})", _included);
             }
             if (_ExistingContact != null)
             {
                 //we have a contact - find account from contact
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_FindContactByEmail({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindContactByEmail({_internal.ID})");
                 _arguments.Add("contact", _ExistingContact);
                 ApiQueueJob _findAccountById = new ApiQueueJob(_internal.ID,queue_FindAccountByID, _arguments, 5, new TimeSpan(0, 1, 0));
                 _queueManager.Enqueue(_findAccountById);
@@ -245,7 +241,7 @@ namespace AzureContainerAutomation
             else
             {
                 //try searching by domain
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_FindContactByEmail({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_FindContactByEmail({_internal.ID})");
                 _arguments.Add("contact", null);
                 ApiQueueJob _findAccountByDomain = new ApiQueueJob(_internal.ID, queue_FindAccountByDomain, _arguments, 5, new TimeSpan(0, 1, 0));
                 _queueManager.Enqueue(_findAccountByDomain);
@@ -255,7 +251,7 @@ namespace AzureContainerAutomation
         {
             InternalMessage _internal = (InternalMessage)_arguments["message"];
             AutotaskPSA.Resource _ExistingResource = null;
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_FindResourceByEmail({_internal.ID}, {DateTimeOffset.Now})");
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_FindResourceByEmail({_internal.ID})");
             try
             {
                 _ExistingResource = _atwsAPIClient.FindResourceByEmail(_internal.Message.Sender.EmailAddress.Address);
@@ -265,17 +261,17 @@ namespace AzureContainerAutomation
                 Exception _included = _ex;
                 if (_ex.InnerException != null)
                     _included = _ex.InnerException;
-                _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_FindResourceByEmail({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_FindResourceByEmail({_internal.ID})");
                 throw new ApiQueueException($"queue_FindResourceByEmail({_internal.ID})", _included);
             }
             if (_ExistingResource != null)
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_FindResourceByEmail({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindResourceByEmail({_internal.ID})");
             else
                 //try searching by domain
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_FindResourceByEmail({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_FindResourceByEmail({_internal.ID})");
             //continue with creating a ticket note anyway.
             _arguments.Add("resource", _ExistingResource); // we really don't or shouldn't care of it the resource exists, this is just for impersonation.
-            ApiQueueJob _createTicketNote = new ApiQueueJob(_internal.ID, queue_CreateTicketNote, _arguments, 5, new TimeSpan(0, 1, 0));
+            ApiQueueJob _createTicketNote = new ApiQueueJob(_internal.ID, queue_CreateTicketNote, _arguments, 5, new TimeSpan(0, 1, 0), true);
             _queueManager.Enqueue(_createTicketNote);
         }
 
@@ -284,7 +280,7 @@ namespace AzureContainerAutomation
             InternalMessage _internal = (InternalMessage)_arguments["message"];
             AutotaskPSA.Contact _contact = (AutotaskPSA.Contact)_arguments["contact"];
             AutotaskPSA.Account _ExistingAccount = null;
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_FindAccountByID({_internal.ID}, {DateTimeOffset.Now})");
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_FindAccountByID({_internal.ID})");
             try
             {
                 _ExistingAccount = _atwsAPIClient.FindAccountByID((int)_contact.AccountID);
@@ -294,13 +290,13 @@ namespace AzureContainerAutomation
                 Exception _included = _ex;
                 if (_ex.InnerException != null)
                     _included = _ex.InnerException;
-                _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_FindAccountByID({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_FindAccountByID({_internal.ID})");
                 throw new ApiQueueException($"queue_FindAccountByID({_internal.ID})", _included);
             }
             if (_ExistingAccount != null)
             {
                 //we have an account stop looking and create a damn ticket
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_FindAccountByID({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindAccountByID({_internal.ID})");
                 _arguments.Add("account", _ExistingAccount);
                 ApiQueueJob _createTicket = new ApiQueueJob(_internal.ID, queue_CreateTicket, _arguments, 5, new TimeSpan(0, 1, 0));
                 _queueManager.Enqueue(_createTicket);
@@ -309,7 +305,7 @@ namespace AzureContainerAutomation
             {
                 //we have not found an account attached to sender WTF?! try by domain anyway?
                 //try searching by domain
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_FindAccountByID({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_FindAccountByID({_internal.ID})");
                 if (_arguments.ContainsKey("contact")) { _arguments.Remove("contact"); }
                 ApiQueueJob _findAccountByDomain = new ApiQueueJob(_internal.ID, queue_FindAccountByDomain, _arguments, 5, new TimeSpan(0, 1, 0));
                 _queueManager.Enqueue(_findAccountByDomain);
@@ -319,7 +315,7 @@ namespace AzureContainerAutomation
         {
             InternalMessage _internal = (InternalMessage)_arguments["message"];
             AutotaskPSA.Account _ExistingAccount = null;
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_FindAccountByDomainName({_internal.ID}, {DateTimeOffset.Now})");
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_FindAccountByDomainName({_internal.ID})");
             try
             {
                 _ExistingAccount = _atwsAPIClient.FindAccountByDomain(_internal.Message.Sender.EmailAddress.Address.Split("@")[1]);
@@ -329,13 +325,13 @@ namespace AzureContainerAutomation
                 Exception _included = _ex;
                 if (_ex.InnerException != null)
                     _included = _ex.InnerException;
-                _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_FindAccountByDomainName({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_FindAccountByDomainName({_internal.ID})");
                 throw new ApiQueueException($"queue_FindAccountByDomain({_internal.ID})", _included);
             }
             if (_ExistingAccount != null)
             {
                 //we have an account stop looking and create a damn ticket
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_FindAccountByDomainName({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindAccountByDomainName({_internal.ID})");
                 _arguments.Add("account", _ExistingAccount);
                 ApiQueueJob _createTicket = new ApiQueueJob(_internal.ID, queue_CreateTicket, _arguments, 5, new TimeSpan(0, 1, 0));
                 _queueManager.Enqueue(_createTicket);
@@ -343,8 +339,8 @@ namespace AzureContainerAutomation
             else
             {
                 //we have not found an account attached to sender WTF?! RESORT TO DEFAULT ACCOUNT!!
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_FindAccountByDomainName({_internal.ID}, {DateTimeOffset.Now})");
-                ApiQueueJob _findAccountByName = new ApiQueueJob(_internal.ID, queue_FindAccountByName, _arguments, 5, new TimeSpan(0, 1, 0));
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_FindAccountByDomainName({_internal.ID})");
+                ApiQueueJob _findAccountByName = new ApiQueueJob(_internal.ID, queue_FindAccountByName, _arguments, 5, new TimeSpan(0, 1, 0), true);
                 _queueManager.Enqueue(_findAccountByName);
             }
         }
@@ -352,7 +348,7 @@ namespace AzureContainerAutomation
         {
             InternalMessage _internal = (InternalMessage)_arguments["message"];
             AutotaskPSA.Account _ExistingAccount = null;
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_FindAccountByName({_internal.ID}, {DateTimeOffset.Now})");
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_FindAccountByName({_internal.ID})");
             try
             {
                 _ExistingAccount = _atwsAPIClient.FindAccountByName(_configuration.Autotask.Defaults.Ticket.Account); // when all else fails use Defaults!
@@ -362,28 +358,21 @@ namespace AzureContainerAutomation
                 Exception _included = _ex;
                 if (_ex.InnerException != null)
                     _included = _ex.InnerException;
-                _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_FindAccountByName({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_FindAccountByName({_internal.ID})");
                 throw new ApiQueueException($"queue_FindAccountByName({_internal.ID})", _included);
             }
             if (_ExistingAccount != null)
             {
                 //we have an account stop lookng and create a damn ticket
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_FindAccountByName({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindAccountByName({_internal.ID})");
                 _arguments.Add("account", _ExistingAccount);
-                ApiQueueJob _createTicket = new ApiQueueJob(_internal.ID, queue_CreateTicket, _arguments, 5, new TimeSpan(0, 1, 0));
+                ApiQueueJob _createTicket = new ApiQueueJob(_internal.ID, queue_CreateTicket, _arguments, 5, new TimeSpan(0, 1, 0), true);
                 _queueManager.Enqueue(_createTicket);
             }
             else
             {
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_FindAccountByName({_internal.ID}, {DateTimeOffset.Now})");
-                //the DEFAULTS HAVE FAILED AND YOU NEED A ACCOUNT, DIE OUT A HORRIBLE DEATH WITH ERROR NOTIFICATION.
-                _opsGenieClient.Raise(new OpsGenieApi.Model.Alert()
-                {
-                    Alias = _internal.ID,
-                    Source = "queue_FindAccountByName",
-                    Message = "There has been a critical failure in the system. I thought you should know."
-                }).GetAwaiter().GetResult();
-                //queue the message move!
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_FindAccountByName({_internal.ID})");
+                throw new ApiQueueException($"queue_FindAccountByName({_internal.ID})");
             }
         }
         private void queue_MoveMessageToFolder(Dictionary<string,object> _arguments)
@@ -391,7 +380,7 @@ namespace AzureContainerAutomation
             InternalMessage _internal = (InternalMessage)_arguments["message"];
             MailFolder _destination = (MailFolder)_arguments["folderDestination"];
             Message _MovedMessage = null;
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_MoveMessageToFolder({_internal.ID}, {DateTimeOffset.Now})");
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_MoveMessageToFolder({_internal.ID})");
             try
             {
                 _MovedMessage = _graphAPIClient.Users[_configuration.MailBox].MailFolders[_internal.Message.ParentFolderId].Messages[_internal.Message.Id].Move(_destination.Id).Request().PostAsync().GetAwaiter().GetResult();
@@ -401,13 +390,13 @@ namespace AzureContainerAutomation
                 Exception _included = _ex;
                 if (_ex.InnerException != null)
                     _included = _ex.InnerException;
-                _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_MoveMessageToFolder({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_MoveMessageToFolder({_internal.ID})");
                 throw new ApiQueueException($"queue_MoveMessageToFolder({_internal.ID})", _included);
             }
             if (_MovedMessage != null)
             {
                 //mark it read
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_MoveMessageToFolder({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_MoveMessageToFolder({_internal.ID})");
                 _internal.Message = _MovedMessage;
                 _arguments.Remove("message");
                 _arguments.Remove("folderDestination");
@@ -418,7 +407,7 @@ namespace AzureContainerAutomation
             }
             else
             {
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_MoveMessageToFolder({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_MoveMessageToFolder({_internal.ID})");
                 throw new ApiQueueException($"queue_MoveMessageToFolder({_internal.ID})");
             }
         }
@@ -427,7 +416,7 @@ namespace AzureContainerAutomation
             InternalMessage _internal = (InternalMessage)_arguments["message"];
             bool _isread = (bool)_arguments["isread"];
             Message _MarkedMessage = null;
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_MarkMessageAs({_internal.ID}, {DateTimeOffset.Now})");
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_MarkMessageAs({_internal.ID})");
             try
             {
                 _internal.Message.IsRead = _isread;
@@ -438,18 +427,20 @@ namespace AzureContainerAutomation
                 Exception _included = _ex;
                 if (_ex.InnerException != null)
                     _included = _ex.InnerException;
-                _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_MarkMessageAs({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_MarkMessageAs({_internal.ID})");
                 throw new ApiQueueException($"queue_MarkMessageAs({_internal.ID})", _included);
             }
             if (_MarkedMessage != null)
             {
                 //we marked it OK
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_MarkMessageAs({_internal.ID}, {DateTimeOffset.Now})");
-                _MarkedMessage = _MarkedMessage;
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_MarkMessageAs({_internal.ID})");
+                _arguments.Remove("isread");
+                ApiQueueJob _getMessageAttachments = new ApiQueueJob(_internal.ID, queue_GetMessageAttachments, _arguments, 5, new TimeSpan(0, 1, 0));
+                _queueManager.Enqueue(_getMessageAttachments);
             }
             else
             {
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_MarkMessageAs({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_MarkMessageAs({_internal.ID})");
                 throw new ApiQueueException($"queue_MarkMessageAs({_internal.ID})");
             }
         }
@@ -459,32 +450,274 @@ namespace AzureContainerAutomation
             AutotaskPSA.Ticket _ticket = (AutotaskPSA.Ticket)_arguments["ticket"];
             AutotaskPSA.Resource _resource = (AutotaskPSA.Resource)_arguments["resource"];
             TicketNote _TicketNote = null;
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_CreateTicketNote({_internal.ID}, {DateTimeOffset.Now})");
+            bool _flaggedInternal = false;
+
+            if (_arguments.ContainsKey("internal"))
+                _flaggedInternal = (bool)_arguments["internal"];
+            string _publish = _flaggedInternal == false ? _configuration.Autotask.Defaults.Attachment.Publish : "Internal Project Team";
+
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_CreateTicketNote({_internal.ID})");
             try
             {
-                _TicketNote = _atwsAPIClient.CreateTicketNote(_ticket, _resource, _internal.Message.Subject.Replace((string)_ticket.TicketNumber, " "), _internal.Message.Body.Content, _configuration.Autotask.Defaults.TicketNote.Type, _configuration.Autotask.Defaults.TicketNote.Publish);
+                _TicketNote = _atwsAPIClient.CreateTicketNote(_ticket, _resource, _internal.Message.Subject.Replace((string)_ticket.TicketNumber, " ").Trim(), _internal.Message.Body.Content, _configuration.Autotask.Defaults.TicketNote.Type, _publish);
             }
             catch (Exception _ex)
             {
                 Exception _included = _ex;
                 if (_ex.InnerException != null)
                     _included = _ex.InnerException;
-                _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_CreateTicketNote({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_CreateTicketNote({_internal.ID})");
                 throw new ApiQueueException($"queue_CreateTicketNote({_internal.ID})", _included);
             }
             if (_TicketNote != null)
             {
                 //ticket created queue message move now - attachments?
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_CreateTicketNote({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_CreateTicketNote({_internal.ID})");
                 _arguments.Add("folderDestination", _processed_folder);
+                _arguments.Add("ticketnote", _TicketNote);
+                if (_arguments.ContainsKey("ticket"))
+                    _arguments.Remove("ticket");
                 ApiQueueJob _moveMessageToFolder = new ApiQueueJob(_internal.ID, queue_MoveMessageToFolder, _arguments, 5, new TimeSpan(0, 1, 0));
                 _queueManager.Enqueue(_moveMessageToFolder);
             }
             else
             {
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_CreateTicketNote({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_CreateTicketNote({_internal.ID})");
                 throw new ApiQueueException($"queue_CreateTicketNote({_internal.ID})");
             }
+        }
+
+        internal SKImage SkiaCheckAndResizeImage(SKImage _image)
+        {
+            try
+            {
+                if (_image != null)
+                {
+                    if (_image.EncodedData.Size >= 5900000) //maybe this max size for the image resize should be configurable
+                    {
+                        using (SKBitmap _bitmap = SKBitmap.FromImage(_image))
+                        {
+                            if (_bitmap != null)
+                            {
+                                using (SKBitmap _resized = new SKBitmap(new SKImageInfo((int)(_image.Width * .50), (int)(_image.Height * .50))))
+                                {
+                                    if (_resized != null)
+                                    {
+                                        _bitmap.ScalePixels(_resized, SKFilterQuality.High);
+                                        using (SKImage _new = SKImage.FromBitmap(_resized))
+                                        {
+                                            if (_new != null)
+                                            {
+                                                using (SKData _output = _new.Encode(SKEncodedImageFormat.Jpeg, 50))
+                                                {
+                                                    if (_output != null)
+                                                        return SKImage.FromEncodedData(_output);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch(Exception _ex)
+            {
+                _ex = _ex;
+            }
+            return _image;
+        }
+        internal Microsoft.Graph.FileAttachment ZipCheckAndCompressAttachment(Microsoft.Graph.FileAttachment _Attachment)
+        {
+            if (_Attachment == null | String.IsNullOrWhiteSpace(_Attachment.Name) || _Attachment.ContentBytes == null)
+                return _Attachment;
+            try
+            {
+                Microsoft.Graph.FileAttachment _compressed = new Microsoft.Graph.FileAttachment()
+                {
+                    AdditionalData = _Attachment.AdditionalData,
+                    ODataType = _Attachment.ODataType
+                };
+                using (MemoryStream _memStream = new MemoryStream())
+                {
+                    using (ZipArchive _archive = new ZipArchive(_memStream, ZipArchiveMode.Create, true))
+                    {
+                        ZipArchiveEntry _zipEntry = _archive.CreateEntry(_Attachment.Name, CompressionLevel.Optimal);
+                        using (Stream _zipEntryStream = _zipEntry.Open())
+                        {
+                            using (StreamWriter _zipStreamWriter = new StreamWriter(_zipEntryStream))
+                            {
+                                _zipStreamWriter.BaseStream.Write(_Attachment.ContentBytes, 0, _Attachment.ContentBytes.Length);
+                                _zipStreamWriter.Flush();
+                            }
+                        }
+                    }
+                    _compressed.Name = $"{_Attachment.Name}.zip";
+                    _compressed.ContentType = _mimeDatabase.GetMimeTypeInfoFromExtension("zip").MimeType;
+                    _compressed.ContentBytes = _memStream.ToArray();
+                    return _compressed;
+                }
+            }
+            catch (Exception _ex)
+            {
+                _ex = _ex;
+            }
+            return _Attachment;
+        }
+
+        private void queue_CreateAttachment(Dictionary<string, object> _arguments)
+        {
+            InternalMessage _internal = (InternalMessage)_arguments["message"];
+            Microsoft.Graph.FileAttachment _attachment = (Microsoft.Graph.FileAttachment)_arguments["attachment"];
+            AutotaskPSA.Ticket _ticket = null;
+            AutotaskPSA.TicketNote _ticketnote = null;
+            AutotaskPSA.Resource _resource = null;
+            AutotaskPSA.Contact _contact = null;
+            bool _flaggedInternal = false;
+            
+            if (_arguments.ContainsKey("ticket"))
+                _ticket = (AutotaskPSA.Ticket)_arguments["ticket"];
+            if (_arguments.ContainsKey("ticketnote"))
+                _ticketnote = (AutotaskPSA.TicketNote)_arguments["ticketnote"];
+            if (_arguments.ContainsKey("resource"))
+                _resource = (AutotaskPSA.Resource)_arguments["resource"];
+            if (_arguments.ContainsKey("contact"))
+                _contact = (AutotaskPSA.Contact)_arguments["contact"];
+            if (_arguments.ContainsKey("internal"))
+                _flaggedInternal = (bool)_arguments["internal"];
+
+            string _publish = _flaggedInternal == false ? _configuration.Autotask.Defaults.Attachment.Publish : "Internal Users Only";
+            AutotaskPSA.Attachment _Attachment = null;
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_CreateAttachment({_internal.ID})");
+            try
+            {
+                if (_ticket != null)
+                    _Attachment = _atwsAPIClient.CreateTicketAttachment(_ticket, _resource, _attachment.Name, _attachment.ContentBytes, _publish);//change this to be configurable(All users/internal)
+                else if(_ticketnote != null)
+                   _Attachment = _atwsAPIClient.CreateTicketNoteAttachment(_ticketnote, _resource, _attachment.Name, _attachment.ContentBytes, _publish);//change this to be configurable(allusers/internal
+            }
+            catch (Exception _ex)
+            {
+                Exception _included = _ex;
+                if (_ex.InnerException != null)
+                    _included = _ex.InnerException;
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_CreateAttachment({_internal.ID})");
+                throw new ApiQueueException($"queue_CreateAttachment({_internal.ID})", _included);
+            }
+            if (_Attachment != null)
+            {
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_CreateAttachment({_internal.ID})");
+            }
+            else
+            {
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_CreateAttachment({_internal.ID})");
+                throw new ApiQueueException($"queue_CreateAttachment({_internal.ID})");
+            }
+        }
+        private void queue_GetMessageAttachments(Dictionary<string, object> _arguments)
+        {
+            InternalMessage _internal = (InternalMessage)_arguments["message"];
+            AutotaskPSA.Ticket _ticket = null;
+            AutotaskPSA.TicketNote _ticketnote = null;
+            AutotaskPSA.Resource _resource = null;
+            AutotaskPSA.Contact _contact = null;
+            if (_arguments.ContainsKey("ticket"))
+                _ticket = (AutotaskPSA.Ticket)_arguments["ticket"];
+            if (_arguments.ContainsKey("ticketnote"))
+                _ticketnote = (AutotaskPSA.TicketNote)_arguments["ticketnote"];
+            if (_arguments.ContainsKey("resource"))
+                _resource = (AutotaskPSA.Resource)_arguments["resource"]; 
+            if (_arguments.ContainsKey("contact"))
+                _contact = (AutotaskPSA.Contact)_arguments["contact"];
+            IMessageAttachmentsCollectionPage _Attachments = null;
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_GetMessageAttachments({_internal.ID})");
+            try
+            {
+                IMessageRequestBuilder _msgRequest = _graphAPIClient.Users[_configuration.MailBox].Messages[_internal.Message.Id];
+                _Attachments = _msgRequest.Attachments.Request().GetAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception _ex)
+            {
+                Exception _included = _ex;
+                if (_ex.InnerException != null)
+                    _included = _ex.InnerException;
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_GetMessageAttachments({_internal.ID})");
+                throw new ApiQueueException($"queue_GetMessageAttachments({_internal.ID})", _included);
+            }
+            while (_Attachments != null)
+            {
+                foreach (Microsoft.Graph.FileAttachment _Attachment in _Attachments)
+                {
+                    try
+                    {
+                        string _extension = System.IO.Path.GetExtension(_Attachment.Name).Replace(".", "");
+                        MimeTypeDatabase.MimeTypeInfo _mimeInfo = _mimeDatabase.GetMimeTypeInfoFromExtension(_extension);
+                        if (_mimeInfo != null)
+                        {
+                            if (_mimeInfo.Allowable == false)
+                            {
+                                _logger.LogInformation($"[{_configuration.MailBox}] - SKIPBADITEM - queue_GetMessageAttachments({_internal.ID})");
+                                continue;
+                            }
+                        }
+                        using (SkiaSharp.SKImage _image = SkiaSharp.SKImage.FromEncodedData(_Attachment.ContentBytes))
+                        {
+                            if (_image != null)
+                            {
+                                if (_image.Width >= _configuration.Autotask.Defaults.Attachment.Image.MinWidth && _image.Height >= _configuration.Autotask.Defaults.Attachment.Image.MinHeight)
+                                {
+                                    if (_configuration.Autotask.Defaults.Attachment.ResizeLargeImages)
+                                    {
+                                        using (SKImage _checked = SkiaCheckAndResizeImage(_image))
+                                        {
+                                            _Attachment.ContentBytes = _checked.EncodedData.ToArray();
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    _logger.LogInformation($"[{_configuration.MailBox}] - SKIPSMALLIMG - queue_GetMessageAttachments({_internal.ID})");
+                                    continue;
+                                }
+                            }
+                        }
+                        if (_Attachment.ContentBytes.Length >= 5900000 && _configuration.Autotask.Defaults.Attachment.CompressLargeItems)
+                        {
+                            Microsoft.Graph.FileAttachment _compressed = ZipCheckAndCompressAttachment(_Attachment);
+                            if (_compressed.ContentBytes.Length < _Attachment.ContentBytes.Length)
+                            {
+                                _Attachment.Name = _compressed.Name;
+                                _Attachment.ContentType = _compressed.ContentType;
+                                _Attachment.ContentBytes = _compressed.ContentBytes;
+                            }
+                        }
+                        if (_Attachment.ContentBytes.Length <= 5900000)
+                        {
+                            //we got it small enough lets Queue Uploading
+                            if (_arguments.ContainsKey("attachment"))
+                                _arguments.Remove("attachment");
+                            _arguments.Add("attachment", _Attachment);
+                            ApiQueueJob _createAttachment = new ApiQueueJob(_internal.ID, queue_CreateAttachment, _arguments, 3, new TimeSpan(0, 5, 0));
+                            _queueManager.Enqueue(_createAttachment);
+                        }
+                        else
+                            _logger.LogInformation($"[{_configuration.MailBox}] - LARGEITEM - queue_GetMessageAttachments({_internal.ID})");
+                    }
+                    catch (Exception _ex)
+                    {
+                        Exception _included = _ex;
+                        if (_ex.InnerException != null)
+                            _included = _ex.InnerException;
+                        _logger.LogInformation($"[{_configuration.MailBox}] - ERRORITEM - queue_GetMessageAttachments({_internal.ID})");
+                    }
+                }
+                if (_Attachments.NextPageRequest != null)
+                    _Attachments = _Attachments.NextPageRequest.GetAsync().GetAwaiter().GetResult();
+                else
+                    _Attachments = null;
+            }
+            _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_GetMessageAttachments({_internal.ID})");
         }
         private void queue_CreateTicket(Dictionary<string, object> _arguments)
         {
@@ -492,7 +725,7 @@ namespace AzureContainerAutomation
             AutotaskPSA.Account _account = (AutotaskPSA.Account)_arguments["account"];
             AutotaskPSA.Contact _contact = (AutotaskPSA.Contact)_arguments["contact"];
             Ticket _Ticket = null;
-            _logger.LogInformation($"Worker({_configuration.MailBox}) ENTRY - queue_CreateTicket({_internal.ID}, {DateTimeOffset.Now})");
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_CreateTicket({_internal.ID})");
             try
             {
                 _Ticket = _atwsAPIClient.CreateTicket(_account, _contact, _internal.Message.Subject, _internal.Message.Body.Content, (DateTime.Now + _configuration.Autotask.Defaults.Ticket.DueDateOffset), _configuration.Autotask.Defaults.Ticket.Source, _configuration.Autotask.Defaults.Ticket.Status, _configuration.Autotask.Defaults.Ticket.Priority, _configuration.Autotask.Defaults.Ticket.Queue, _configuration.Autotask.Defaults.Ticket.WorkType);
@@ -502,20 +735,21 @@ namespace AzureContainerAutomation
                 Exception _included = _ex;
                 if (_ex.InnerException != null)
                     _included = _ex.InnerException;
-                _logger.LogInformation($"Worker({_configuration.MailBox}) EXCEPTION - queue_CreateTicket({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_CreateTicket({_internal.ID})");
                 throw new ApiQueueException($"queue_CreateTicket({_internal.ID})", _included);
             }
             if (_Ticket != null && !string.IsNullOrWhiteSpace((string)_Ticket.TicketNumber))
             {
                 //ticket created queue message move now - attachments?
-                _logger.LogInformation($"Worker({_configuration.MailBox}) SUCCESS - queue_CreateTicket({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_CreateTicket({_internal.ID})");
                 _arguments.Add("folderDestination", _processed_folder);
+                _arguments.Add("ticket", _Ticket);
                 ApiQueueJob _moveMessageToFolder = new ApiQueueJob(_internal.ID, queue_MoveMessageToFolder, _arguments, 5, new TimeSpan(0, 1, 0));
                 _queueManager.Enqueue(_moveMessageToFolder);
             }
             else
             {
-                _logger.LogInformation($"Worker({_configuration.MailBox}) FAIL - queue_CreateTicket({_internal.ID}, {DateTimeOffset.Now})");
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_CreateTicket({_internal.ID})");
                 throw new ApiQueueException($"queue_CreateTicket({_internal.ID})");
             }
         }
@@ -527,209 +761,28 @@ namespace AzureContainerAutomation
             InternalMessage _internal = new InternalMessage() { ID = Sha256Sum(message.Id), Message = message };
             if (!_queueManager.HasJobWithMessageID(_internal.ID))
             {
-                _logger.LogInformation($"Worker({_configuration.MailBox}) OnMessageReceivedAsync({_internal.ID}, {DateTimeOffset.Now})");
-                Dictionary<string, object> _findTicketJobArgs = new Dictionary<string, object>() { { "message", _internal } };
+                Dictionary<string, object> _findTicketJobArgs = new Dictionary<string, object>();
+                _logger.LogInformation($"[{_configuration.MailBox}] - OnMessageReceivedAsync({_internal.ID})");
+                string _messageTag = ExtractSubjectTag(_internal.Message.Subject);
+                bool _messageTagIsInternalFunction = false;
+                if (!String.IsNullOrWhiteSpace(_messageTag))
+                {
+                    switch(_messageTag.ToLower())
+                    {
+                        case "internal":
+                            _findTicketJobArgs.Add("internal", true);
+                            _messageTagIsInternalFunction = true;
+                            break;
+                    }
+                }
+
+                if (_messageTagIsInternalFunction)
+                    _internal.Message.Subject = _internal.Message.Subject.Replace($"[{_messageTag}]", "").Trim();
+                _findTicketJobArgs.Add("message", _internal);
                 ApiQueueJob _findTicketJob = new ApiQueueJob(_internal.ID, queue_FindTicketByNumber, _findTicketJobArgs, 5, new TimeSpan(0, 1, 0));
                 _queueManager.Enqueue(_findTicketJob);
             }
         }
-
-        private void byteRateLimiting(long sizeInBytes)
-        {
-            DateTimeOffset _now = DateTime.UtcNow;
-            TimeSpan _time_Since = _now - _byteRateLimit_Reset_Time;
-            TimeSpan _time_Remaining = byteRateLimit_timer - _time_Since;
-            long _total_sizeInbytes = (sizeInBytes + buffer_byteRateLimit);
-            if (_time_Since >= byteRateLimit_timer)
-            {
-                //we are >= 5 minutes we can reset
-                current_byteRateLimit = 0;
-                _byteRateLimit_Reset_Time = DateTime.UtcNow;
-            }
-            if ((current_byteRateLimit+_total_sizeInbytes) >= _byteRateLimit)
-            {
-                _logger.LogWarning("Worker rate limiting processing for {wait_time} at {time}", _time_Remaining, DateTime.Now);
-                System.Threading.Thread.Sleep(_time_Remaining);
-                byteRateLimiting(sizeInBytes);
-            }
-            else
-            {
-                current_byteRateLimit += _total_sizeInbytes;
-            }
-        }
-
-        private async System.Threading.Tasks.Task<bool> CreateAutoTaskAttachmentFromMesssageForTicket(Ticket ticket, Message message)
-        {
-            string _log_msgid = Sha256Sum(message.Id);
-            bool _result = false;
-            if (ticket == null || message == null)
-            {
-                throw new ArgumentNullException();
-            }
-            try
-            {
-                _logger.LogInformation("Worker creating attachment from message: {messageid} at: {time}", _log_msgid, DateTimeOffset.Now);
-                HttpRequestMessage _request = _graphAPIClient.Users[_configuration.MailBox].Messages[message.Id].Request().GetHttpRequestMessage();
-                _request.RequestUri = new Uri((_request.RequestUri.OriginalString + @"/$value"));
-                byte[] _MIME_Message = Encoding.UTF8.GetBytes(await _graphAPIClient.HttpProvider.SendAsync(_request).Result.Content.ReadAsStringAsync());
-                if (_MIME_Message != null)
-                {
-                    string _MIME_Name = $"{(string)ticket.TicketNumber}_Original.eml";
-                    if (_MIME_Message.Length > 6000000) // zip it up
-                    {
-                        using (MemoryStream _memStream = new MemoryStream())
-                        {
-                            using (ZipArchive _archive = new ZipArchive(_memStream, ZipArchiveMode.Create, true))
-                            {
-                                ZipArchiveEntry _zipEntry = _archive.CreateEntry(_MIME_Name);
-                                using (Stream _zipEntryStream = _zipEntry.Open())
-                                {
-                                    using (StreamWriter _zipStreamWriter = new StreamWriter(_zipEntryStream))
-                                    {
-                                        _zipStreamWriter.BaseStream.Write(_MIME_Message, 0, _MIME_Message.Length);
-                                        _zipStreamWriter.Flush();
-                                    }
-                                }
-                            }
-                            _MIME_Message = _memStream.ToArray();
-                            _MIME_Name += ".zip";
-                        }
-                    }
-                    if (_MIME_Message.Length > 0 && _MIME_Message.Length <= 6000000)
-                    {
-                        try
-                        {
-                            byteRateLimiting(_MIME_Message.Length);
-                            AutotaskPSA.Attachment _CreatedAttachment = _atwsAPIClient.CreateTicketAttachment(ticket, _MIME_Name, _MIME_Message, "All Autotask Users");
-                            if (_CreatedAttachment != null)
-                            {
-                                _result = true;
-                                _logger.LogInformation("Worker uploaded attachment of message: {messageid} at: {time} size: {size}", _log_msgid, DateTimeOffset.Now, _MIME_Message.Length);
-                            }
-                            else
-                            {
-                                throw new System.ServiceModel.CommunicationException("Failed to Create attachment, Networking, api username/password, upload limits, report to developer");
-                            }
-                        }
-                        catch (Exception _ex)
-                        {
-                            _result = false;
-                            _logger.LogError(_ex, "Worker failed uploading attachment of message: {messageid} at: {time} size: {size}", _log_msgid, DateTimeOffset.Now, _MIME_Message.Length);
-                        }
-                    }
-                }
-                else
-                {
-                    _result = true;
-                }
-            }
-            catch (Exception _ex)
-            {
-                _result = false;
-                _logger.LogError(_ex, "Worker failed creating attachment of message: {messageid} at: {time}", _log_msgid, DateTimeOffset.Now);
-            }
-            return _result;
-        }
-
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-        /*private async Task<Ticket> CreateAutoTaskTicketFromMessage(Message message)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-        {
-            Ticket _result = null;
-            string _log_msgid = Sha256Sum(message.Id);
-            //EVERY TICKET MUST HAVE AN ACCOUNT BUT NOT A CONTACT, ATTEMPT TO FIND VIA CONTACT
-            AutotaskPSA.Contact _MsgSender = null;
-            Account _MsgSenderAccount = null;
-            //lets see if we can find the sender.
-            try
-            {
-                //we should really only get errors through these blocks if the connection fails or has bad data.
-                _MsgSender = _atwsAPIClient.FindContactByEmail(message.Sender.EmailAddress.Address);
-                if (_MsgSender != null)
-                {
-                    _MsgSenderAccount = _atwsAPIClient.FindAccountByID((int)_MsgSender.AccountID);
-                }
-                else
-                {
-                    _MsgSenderAccount = _atwsAPIClient.FindAccountByDomain(message.Sender.EmailAddress.Address.Split("@")[1]);
-                }
-
-                if (_MsgSenderAccount == null)
-                {
-                    _MsgSenderAccount = _atwsAPIClient.FindAccountByName(_configuration.Autotask.Defaults.Ticket.Account); // when all else fails use Defaults!
-                    if (_MsgSenderAccount == null)
-                    {
-                        throw new ArgumentNullException("Unable to find Account, please check your default account settings.");
-                    }
-                }
-            }
-            catch
-            {
-                _MsgSender = null;
-                _MsgSenderAccount = null;
-            }
-            //Create Ticket
-            if (_MsgSenderAccount != null)
-            {
-                _logger.LogInformation("Worker creating new ticket for message: {messageid} at: {time}", _log_msgid, DateTimeOffset.Now);
-                try
-                {
-                    byteRateLimiting(message.Subject.Length+message.Body.Content.Length);
-                    Ticket _CreatedTicket = _atwsAPIClient.CreateTicket(_MsgSenderAccount, _MsgSender, message.Subject, message.Body.Content, (DateTime.Now + _configuration.Autotask.Defaults.Ticket.DueDateOffset), _configuration.Autotask.Defaults.Ticket.Source, _configuration.Autotask.Defaults.Ticket.Status, _configuration.Autotask.Defaults.Ticket.Priority, _configuration.Autotask.Defaults.Ticket.Queue,_configuration.Autotask.Defaults.Ticket.WorkType);
-                    if (_CreatedTicket != null && !string.IsNullOrWhiteSpace((string)_CreatedTicket.TicketNumber))
-                    {
-                        _result = _CreatedTicket;
-                        _logger.LogInformation("Worker created ticket: {ticketnumber} for message: {messageid} at: {time}", _CreatedTicket.TicketNumber, _log_msgid, DateTimeOffset.Now);
-                        //handle attachments.
-                    }
-                    else
-                    {
-                        throw new ApplicationException("Ticket Creation failed check defaults, contact developer");
-                    }
-                }
-                catch (Exception _ex)
-                {
-                    _logger.LogError(_ex, "Worker failed creating new ticket for message: {messageid} at: {time}", _log_msgid, DateTimeOffset.Now);
-                }
-            }
-            return _result;
-        }*/
-
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-        private async Task<TicketNote> CreateAutoTaskTicketNoteFromMessage(Ticket _ExistingTicket, Message message)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-        {
-            TicketNote _result = null;
-            string _log_msgid = Sha256Sum(message.Id);
-            Resource _MsgSender = null;
-            //Create Ticket Note
-            //Resource impersonation isn't a requirement. don't try too hard to find a resource. fail gracefully.
-            try
-            {
-                _MsgSender = _atwsAPIClient.FindResourceByEmail(message.Sender.EmailAddress.Address);
-            }
-            catch
-            {
-                _MsgSender = null; //graceful failures are the best failures.
-            }
-            _logger.LogInformation("Worker adding note to ticket: {ticketnumber} for message: {messageid} at: {time}", (string)_ExistingTicket.TicketNumber, _log_msgid, DateTimeOffset.Now);
-            try
-            {
-                byteRateLimiting(message.Subject.Length + message.Body.Content.Length);
-                TicketNote _CreatedTicketNote = _atwsAPIClient.CreateTicketNote(_ExistingTicket, _MsgSender, message.Subject.Replace((string)_ExistingTicket.TicketNumber, string.Empty), message.Body.Content, _configuration.Autotask.Defaults.TicketNote.Type, _configuration.Autotask.Defaults.TicketNote.Publish);
-                if (_CreatedTicketNote != null)
-                {
-                    _result = _CreatedTicketNote;
-                    _logger.LogInformation("Worker added ticket note to ticket : {ticketnumber} for message: {messageid} at: {time}", (string)_ExistingTicket.TicketNumber, _log_msgid, DateTimeOffset.Now);
-                }
-            }
-            catch (Exception _ex)
-            {
-                _logger.LogError(_ex, "Worker failed adding ticket note to ticket : {ticketnumber} for message: {messageid} at: {time}", (string)_ExistingTicket.TicketNumber, _log_msgid, DateTimeOffset.Now);
-            }
-            return _result;
-        }
-
         protected internal string Sha256Sum(string rawData)
         {
             // Create a SHA256   
@@ -805,6 +858,27 @@ namespace AzureContainerAutomation
                     if (_matches.Count > 0)
                     {
                         _searchResult = _matches.First().Value;
+                    }
+                }
+                return _searchResult;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+        protected internal string ExtractSubjectTag(string data)
+        {
+            const string _ACS_TagRegEx = @"^(\[[a-zA-Z]*\])";
+            string _searchResult = null;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(data))
+                {
+                    MatchCollection _matches = Regex.Matches(data, _ACS_TagRegEx, RegexOptions.Multiline);
+                    if (_matches.Count > 0)
+                    {
+                        _searchResult = _matches.First().Value.Replace("[", "").Replace("]", "");
                     }
                 }
                 return _searchResult;

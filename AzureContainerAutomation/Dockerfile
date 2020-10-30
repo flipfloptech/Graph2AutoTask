@@ -8,16 +8,16 @@ WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/core/sdk:3.1-nanoserver-1903 AS build
 WORKDIR /src
-COPY ["AzureContainerAutomation/AzureContainerAutomation.csproj", "AzureContainerAutomation/"]
-RUN dotnet restore "AzureContainerAutomation/AzureContainerAutomation.csproj"
+COPY ["Graph2AutoTask/Graph2AutoTask.csproj", "Graph2AutoTask/"]
+RUN dotnet restore "Graph2AutoTask/Graph2AutoTask.csproj"
 COPY . .
-WORKDIR "/src/AzureContainerAutomation"
-RUN dotnet build "AzureContainerAutomation.csproj" -c Release -o /app/build
+WORKDIR "/src/Graph2AutoTask"
+RUN dotnet build "Graph2AutoTask.csproj" -c Release -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "AzureContainerAutomation.csproj" -c Release -o /app/publish
+RUN dotnet publish "Graph2AutoTask.csproj" -c Release -o /app/publish
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "AzureContainerAutomation.dll"]
+ENTRYPOINT ["dotnet", "Graph2AutoTask.dll"]

@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace AzureContainerAutomation
+namespace Graph2AutoTask
 {
     public class InternalMessage
     {

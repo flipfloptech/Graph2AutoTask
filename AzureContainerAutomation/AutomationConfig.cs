@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace AzureContainerAutomation
+namespace Graph2AutoTask
 {
     public class AutomationConfig
     {
@@ -44,6 +44,7 @@ namespace AzureContainerAutomation
     {
         public AutotaskTicketDefaultsConfig Ticket { get; set; }
         public AutotaskTicketNoteDefaultsConfig TicketNote { get; set; }
+        public AutotaskAttachmentDefaultsConfig Attachment { get; set; }
     }
     public class AutotaskTicketDefaultsConfig
     {
@@ -59,5 +60,20 @@ namespace AzureContainerAutomation
     {
         public string Type { get; set; }
         public string Publish { get; set; }
+    }
+
+    public class AutotaskAttachmentDefaultsConfig
+    {
+
+        public bool ResizeLargeImages { get; set; }
+        public bool CompressLargeItems { get; set; }
+
+        public AutotaskAttachmentDefaultsConfigImage Image {get; set;}
+        public string Publish { get; set; }
+    }
+    public class AutotaskAttachmentDefaultsConfigImage
+    {
+        public int MinWidth { get; set; }
+        public int MinHeight { get; set; }
     }
 }

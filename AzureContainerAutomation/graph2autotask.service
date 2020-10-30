@@ -1,0 +1,11 @@
+﻿[Unit]
+Description=Azure Container Automation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/opt/Graph2AutoTask/bin/Release/netcoreapp3.1/Graph2AutoTask
+
+[Install]
+WantedBy=multi-user.target
