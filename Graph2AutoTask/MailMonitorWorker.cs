@@ -869,7 +869,7 @@ namespace Graph2AutoTask
         }
         protected internal string ExtractSubjectTag(string data)
         {
-            const string _ACS_TagRegEx = @"^(\[[a-zA-Z]*\])";
+            const string _ACS_TagRegEx = @"(\[[a-zA-Z]*\])";
             string _searchResult = null;
             try
             {
