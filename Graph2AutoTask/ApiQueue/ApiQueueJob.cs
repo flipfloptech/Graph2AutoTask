@@ -33,8 +33,10 @@ namespace Graph2AutoTask.ApiQueue
             _internalAlertable = Alertable;
         }
         private UInt64 _internalRetries = 0;
+        private DateTime internal_RetryTime = DateTime.Now;
         public UInt64 MaxRetries { get { return _internalMaxRetries; } }
         public TimeSpan RetryDelay { get { return (_internalRetryDelay*(_internalRetries > 0 ? _internalRetries : 1 )); } }
+        public DateTime RetryTime { get { return internal_RetryTime; } set { internal_RetryTime = value; } }
         public UInt64 RetryCount { get { return _internalRetries; } }
         public Dictionary<string,object> Arguments { get { return _internalArguments; } }
         public ApiQueueException Exception { get { return _internalException; } }

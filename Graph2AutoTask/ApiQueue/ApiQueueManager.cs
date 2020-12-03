@@ -72,8 +72,9 @@ namespace Graph2AutoTask.ApiQueue
             while (!_internalToken.GetValueOrDefault(_defaultToken).IsCancellationRequested)
             {
                 ApiQueueJob _job;
-                lock (_jobs)
+                lock(_jobs)
                 {
+                    
                     if (_jobs.Count == 0)
                     {
                         if (_currentthreads > 0)
@@ -84,43 +85,48 @@ namespace Graph2AutoTask.ApiQueue
                 }
                 try
                 {
-                    if (_job.RetryCount > 0)
+                    if (_job.RetryTime > DateTime.Now)
                     {
-                        _logger.LogInformation($"[{_configuration.MailBox}] - Delaying Job {_job.ID} at: {DateTimeOffset.Now} for: {_job.RetryDelay} reason: QUEUE_RETRY_DELAY");
-                        System.Threading.Thread.Sleep(_job.RetryDelay);
+                        lock(_jobs) { _jobs.Enqueue(_job); }
+                        System.Threading.Thread.Sleep(1);
+                        //requeue by default until time to attempt to execute again.
                     }
-                    switch (_job.Execute())
+                    else
                     {
-                        case ApiQueueJobResult.QUEUE_SUCCESS:
-                            //dequeue item
-                            _logger.LogInformation($"[{_configuration.MailBox}] - Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_SUCCESS");
-                            break;
-                        case ApiQueueJobResult.QUEUE_RETRY:
-                            //leave for retry // wait
-                            _jobs.Enqueue(_job);
-                            _logger.LogInformation($"[{_configuration.MailBox}] - Requeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_RETRY[{_job.RetryCount}]");
-                            break;
-                        case ApiQueueJobResult.QUEUE_FAILED:
-                            //we retried x times, over x time and it still failed, 
-                            _logger.LogInformation($"[{_configuration.MailBox}] - Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_FAIL_MAXRETRY");
-                            if (_job.Alertable)
-                            {
-                                try
+                        switch (_job.Execute())
+                        {
+                            case ApiQueueJobResult.QUEUE_SUCCESS:
+                                //we ran OK continue on.
+                                _logger.LogInformation($"[{_configuration.MailBox}] - Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_SUCCESS");
+                                break;
+                            case ApiQueueJobResult.QUEUE_RETRY:
+                                //leave for retry // wait
+                                _job.RetryTime = (DateTime.Now+_job.RetryDelay);
+                                lock(_jobs) { _jobs.Enqueue(_job); }
+                                _logger.LogInformation($"[{_configuration.MailBox}] - Requeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_RETRY[{_job.RetryCount}]");
+                                break;
+                            case ApiQueueJobResult.QUEUE_FAILED:
+                                //we retried x times, over x time and it still failed, 
+                                _logger.LogInformation($"[{_configuration.MailBox}] - Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_FAIL_MAXRETRY");
+                                if (_job.Alertable)
                                 {
-                                    _opsGenieClient.Raise(new OpsGenieApi.Model.Alert()
+                                    try
                                     {
-                                        Alias = _job.ID,
-                                        Source = "AzureTicketProcessor",
-                                        Message = $"There has been a critical failure in {_job.Task.Method.Name} reason: QUEUE_FAIL_MAXRETRY"
-                                    }).GetAwaiter().GetResult();
-                                    _logger.LogInformation($"[{_configuration.MailBox}] - Job {_job.ID} Sent OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
+                                        _opsGenieClient.Raise(new OpsGenieApi.Model.Alert()
+                                        {
+                                            Alias = _job.ID,
+                                            Source = "AzureTicketProcessor",
+                                            Message = $"There has been a critical failure in {_job.Task.Method.Name} reason: QUEUE_FAIL_MAXRETRY"
+                                        }).GetAwaiter().GetResult();
+                                        _logger.LogInformation($"[{_configuration.MailBox}] - Job {_job.ID} Sent OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
+                                    }
+                                    catch
+                                    {
+                                        _logger.LogInformation($"[{_configuration.MailBox}] - Job {_job.ID} Failed to Send OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
+                                    }
                                 }
-                                catch
-                                {
-                                    _logger.LogInformation($"[{_configuration.MailBox}] - Job {_job.ID} Failed to Send OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
-                                }
-                            }
-                            break;
+                                break;
+                        }
                     }
                 }
                 catch
