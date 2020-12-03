@@ -299,7 +299,7 @@ namespace Graph2AutoTask
                 //we have an account stop looking and create a damn ticket
                 _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindAccountByID({_internal.ID})");
                 _arguments.Add("account", _ExistingAccount);
-                ApiQueueJob _createTicket = new ApiQueueJob(_internal.ID, queue_CreateTicket, _arguments, 5, new TimeSpan(0, 1, 0));
+                ApiQueueJob _createTicket = new ApiQueueJob(_internal.ID, queue_CreateTicket, _arguments, 5, new TimeSpan(0, 1, 0), true);
                 _queueManager.Enqueue(_createTicket);
             }
             else
@@ -334,7 +334,7 @@ namespace Graph2AutoTask
                 //we have an account stop looking and create a damn ticket
                 _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindAccountByDomainName({_internal.ID})");
                 _arguments.Add("account", _ExistingAccount);
-                ApiQueueJob _createTicket = new ApiQueueJob(_internal.ID, queue_CreateTicket, _arguments, 5, new TimeSpan(0, 1, 0));
+                ApiQueueJob _createTicket = new ApiQueueJob(_internal.ID, queue_CreateTicket, _arguments, 5, new TimeSpan(0, 1, 0), true);
                 _queueManager.Enqueue(_createTicket);
             }
             else
