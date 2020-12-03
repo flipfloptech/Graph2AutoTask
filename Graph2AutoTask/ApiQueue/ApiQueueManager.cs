@@ -116,7 +116,7 @@ namespace Graph2AutoTask.ApiQueue
                                         {
                                             Alias = _job.ID,
                                             Source = "AzureTicketProcessor",
-                                            Message = $"There has been a critical failure in {_job.Task.Method.Name} reason: QUEUE_FAIL_MAXRETRY"
+                                            Message = $"There has been a critical failure check system logs.\r\nreason: {_job.Exception.InnerException.Message}"
                                         }).GetAwaiter().GetResult();
                                         _logger.LogInformation($"[{_configuration.MailBox}] - Job {_job.ID} Sent OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
                                     }
