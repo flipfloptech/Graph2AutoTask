@@ -585,9 +585,14 @@ namespace AutotaskPSA
                 strResource.Append("<queryxml version=\"1.0\">");
                 strResource.Append("<entity>Contact</entity>");
                 strResource.Append("<query>");
-                strResource.Append("<field>EMailAddress<expression op=\"equals\">");
+                strResource.Append("<condition><field>EMailAddress<expression op=\"equals\">");
                 strResource.Append(contactEmail);
-                strResource.Append("</expression></field>");
+                strResource.Append("</expression></field></condition>");
+
+                strResource.Append("<condition><field>Active<expression op=\"equals\">");
+                strResource.Append("1");
+                strResource.Append("</expression></field></condition>");
+                
                 strResource.Append("</query></queryxml>");
 
                 queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
