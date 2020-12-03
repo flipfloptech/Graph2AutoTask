@@ -103,11 +103,11 @@ namespace Graph2AutoTask.ApiQueue
                                 //leave for retry // wait
                                 _job.RetryTime = (DateTime.Now+_job.RetryDelay);
                                 lock(_jobs) { _jobs.Enqueue(_job); }
-                                _logger.LogInformation($"[{_configuration.MailBox}] - Requeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_RETRY[{_job.RetryCount}]");
+                                _logger.LogWarning($"[{_configuration.MailBox}] - Requeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_RETRY[{_job.RetryCount}]");
                                 break;
                             case ApiQueueJobResult.QUEUE_FAILED:
                                 //we retried x times, over x time and it still failed, 
-                                _logger.LogInformation($"[{_configuration.MailBox}] - Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_FAIL_MAXRETRY");
+                                _logger.LogError(_job.Exception, $"[{_configuration.MailBox}] - Dequeued Job {_job.ID} at: {DateTimeOffset.Now} reason: QUEUE_FAIL_MAXRETRY");
                                 if (_job.Alertable)
                                 {
                                     try
@@ -120,9 +120,9 @@ namespace Graph2AutoTask.ApiQueue
                                         }).GetAwaiter().GetResult();
                                         _logger.LogInformation($"[{_configuration.MailBox}] - Job {_job.ID} Sent OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
                                     }
-                                    catch
+                                    catch(Exception _ex)
                                     {
-                                        _logger.LogInformation($"[{_configuration.MailBox}] - Job {_job.ID} Failed to Send OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
+                                        _logger.LogError(_ex, $"[{_configuration.MailBox}] - Job {_job.ID} Failed to Send OpsGenie Alert at: {DateTimeOffset.Now} for task: {_job.Task.Method.Name}");
                                     }
                                 }
                                 break;
