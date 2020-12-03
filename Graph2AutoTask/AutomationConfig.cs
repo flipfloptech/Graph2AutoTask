@@ -20,6 +20,11 @@ namespace Graph2AutoTask
         internal string ClientAuthority => $"https://login.microsoftonline.com/{TenantID}/v2.0";
     }
 
+    public class OpsGenieConfig
+    {
+        public string ApiKey { get; set; }
+    }
+
     public class MailboxConfig
     {
         public string MailBox { get; set; }
@@ -27,6 +32,7 @@ namespace Graph2AutoTask
         public MailboxFolderConfig Folders { get; set; }
         public AutotaskConfig Autotask { get; set; }
         public GraphConfig Graph { get; set; }
+        public OpsGenieConfig OpsGenie {get; set;}
     }
     public class MailboxProcessingConfig
     {

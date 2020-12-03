@@ -28,7 +28,7 @@ namespace Graph2AutoTask
         private readonly AutotaskAPIClient _atwsAPIClient = null;
         private readonly ILogger<MailMonitorWorker> _logger;
         private readonly MailboxConfig _configuration = null;
-        private readonly OpsGenieClient _opsGenieClient = new OpsGenieClient(new OpsGenieClientConfig() { ApiKey = "b70407d2-e7aa-416e-aeb3-41e60a323cb6" }, new OpsGenieSerializer());
+        private readonly OpsGenieClient _opsGenieClient = null;
         private ApiQueueManager _queueManager = null;
         private MimeTypeDatabase _mimeDatabase = new MimeTypeDatabase();
         private MailFolder _incoming_folder = null;
@@ -52,6 +52,7 @@ namespace Graph2AutoTask
                                               .WithClientSecret(_configuration.Graph.ClientSecret)
                                               .WithAuthority(new Uri(_configuration.Graph.ClientAuthority))
                                               .Build();
+                _opsGenieClient = new OpsGenieClient(new OpsGenieClientConfig() { ApiKey = _configuration.OpsGenie.ApiKey }, new OpsGenieSerializer());
                 _graphAPIClient = new GraphServiceClient(new MsalAuthenticationProvider(_confidentialClientApplication, new string[] { "https://graph.microsoft.com/.default" }));
                 _atwsAPIClient = new AutotaskAPIClient(_configuration.Autotask.Username, _configuration.Autotask.Password, AutotaskIntegrationKey.nCentral);
 
