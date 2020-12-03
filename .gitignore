@@ -342,6 +342,7 @@ ASALocalRun/
 healthchecksdb
 
 #logs folder
+
 logs/
 
 # Created by https://www.gitignore.io/api/visualstudiocode
