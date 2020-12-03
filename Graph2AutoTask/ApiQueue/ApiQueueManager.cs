@@ -62,8 +62,8 @@ namespace Graph2AutoTask.ApiQueue
                         _state.Break();
                     }
                 });
-                return _result;
             }
+            return _result;
         }
 
         private void ProcessQueuedItems(object Token)
