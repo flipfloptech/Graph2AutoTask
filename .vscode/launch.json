@@ -5,12 +5,23 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": ".NET Core Launch (console)",
+            "name": ".NET Core Launch (Development)",
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
             "program": "${workspaceFolder}/Graph2AutoTask/bin/Debug/netcoreapp3.1/Graph2AutoTask.dll",
             "args": ["--app-settings-config-file","/opt/configs/appsettings.Development.json"],
+            "cwd": "${workspaceFolder}/Graph2AutoTask",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": ".NET Core Launch (Debugging)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/Graph2AutoTask/bin/Debug/netcoreapp3.1/Graph2AutoTask.dll",
+            "args": ["--app-settings-config-file","/opt/configs/appsettings.Diagnostics.json"],
             "cwd": "${workspaceFolder}/Graph2AutoTask",
             "console": "internalConsole",
             "stopAtEntry": false

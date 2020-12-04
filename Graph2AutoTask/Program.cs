@@ -24,7 +24,7 @@ namespace Graph2AutoTask
         {
             appsettings_configuration_path = $"{System.IO.Path.GetDirectoryName(new System.Uri(System.Reflection.Assembly.GetExecutingAssembly().CodeBase).LocalPath)}/configs/";
             serilog_configuration_path = $"{System.IO.Path.GetDirectoryName(new System.Uri(System.Reflection.Assembly.GetExecutingAssembly().CodeBase).LocalPath)}/configs/";
-            System.Console.WriteLine("Graph2AutoTask v2.0");
+            System.Console.WriteLine("Graph2AutoTask v2.1");
 
             if (appSettingsConfigFile?.DirectoryName != null && appSettingsConfigFile?.Name != null) {
                 appsettings_configuration_path = $"{appSettingsConfigFile?.DirectoryName}/";
