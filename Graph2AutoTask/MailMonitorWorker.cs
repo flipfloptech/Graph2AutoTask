@@ -720,6 +720,20 @@ namespace Graph2AutoTask
             }
             _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_GetMessageAttachments({_internal.ID})");
         }
+
+        private int GetAccountUDFValue(Account Account, string FieldName)
+        {
+            if (Account == null) throw  new System.ArgumentNullException("account missing");
+            if (string.IsNullOrWhiteSpace(FieldName)) throw new System.ArgumentNullException("fieldname missing");
+            foreach(UserDefinedField _udf in Account.UserDefinedFields)
+            {
+                if (_udf.Name.ToLowerInvariant() == FieldName.ToLowerInvariant())
+                {
+                    return Convert.ToInt32(_udf.Value);
+                }
+            }
+            return -1;
+        }
         private void queue_CreateTicket(Dictionary<string, object> _arguments)
         {
             InternalMessage _internal = (InternalMessage)_arguments["message"];
@@ -729,7 +743,12 @@ namespace Graph2AutoTask
             _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_CreateTicket({_internal.ID})");
             try
             {
-                _Ticket = _atwsAPIClient.CreateTicket(_account, _contact, _internal.Message.Subject, _internal.Message.Body.Content, (DateTime.Now + _configuration.Autotask.Defaults.Ticket.DueDateOffset), _configuration.Autotask.Defaults.Ticket.Source, _configuration.Autotask.Defaults.Ticket.Status, _configuration.Autotask.Defaults.Ticket.Priority, _configuration.Autotask.Defaults.Ticket.Queue, _configuration.Autotask.Defaults.Ticket.WorkType);
+                //lets check for a queue
+                int _queueValue = GetAccountUDFValue(_account,_configuration.Autotask.Defaults.Ticket.QueueUDF);
+                string _queueLabel = _atwsAPIClient.LookupAccountUDFByValue(_configuration.Autotask.Defaults.Ticket.QueueUDF,_queueValue);
+                if (String.IsNullOrWhiteSpace(_atwsAPIClient.LookupTicketQueueValueByName(_queueLabel))) { _queueLabel = _configuration.Autotask.Defaults.Ticket.DefaultQueue; }
+                //create the ticket.
+                _Ticket = _atwsAPIClient.CreateTicket(_account, _contact, _internal.Message.Subject, _internal.Message.Body.Content, (DateTime.Now + _configuration.Autotask.Defaults.Ticket.DueDateOffset), _configuration.Autotask.Defaults.Ticket.Source, _configuration.Autotask.Defaults.Ticket.Status, _configuration.Autotask.Defaults.Ticket.Priority, _queueLabel, _configuration.Autotask.Defaults.Ticket.WorkType);
             }
             catch(Exception _ex)
             {

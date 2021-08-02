@@ -8,6 +8,8 @@ using Serilog;
 using System.Diagnostics;
 using System.IO;
 using System.CommandLine.DragonFruit;
+using AutotaskPSA;
+using System;
 
 namespace Graph2AutoTask
 {
@@ -20,11 +22,12 @@ namespace Graph2AutoTask
         /// <summary>Processes emails from Graph and creates tickets in Autotask.</summary>
         /// <param name="appSettingsConfigFile">The path to the appsettings.config file that is to be used.</param>
         /// <param name="serilogConfigFile">The path to the serilog.config file that is to be used.</param>
+        
         public static void Main(FileInfo appSettingsConfigFile=null, FileInfo serilogConfigFile=null)
         {
             appsettings_configuration_path = $"{System.IO.Path.GetDirectoryName(new System.Uri(System.Reflection.Assembly.GetExecutingAssembly().CodeBase).LocalPath)}/configs/";
             serilog_configuration_path = $"{System.IO.Path.GetDirectoryName(new System.Uri(System.Reflection.Assembly.GetExecutingAssembly().CodeBase).LocalPath)}/configs/";
-            System.Console.WriteLine("Graph2AutoTask v2.1");
+            System.Console.WriteLine("Graph2AutoTask v2.3");
 
             if (appSettingsConfigFile?.DirectoryName != null && appSettingsConfigFile?.Name != null) {
                 appsettings_configuration_path = $"{appSettingsConfigFile?.DirectoryName}/";

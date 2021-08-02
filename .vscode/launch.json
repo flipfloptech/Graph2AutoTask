@@ -9,8 +9,8 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
-            "program": "${workspaceFolder}/Graph2AutoTask/bin/Debug/netcoreapp3.1/Graph2AutoTask.dll",
-            "args": ["--app-settings-config-file","/opt/configs/appsettings.Development.json"],
+            "program": "${workspaceFolder}/Graph2AutoTask/bin/Debug/netcoreapp5/Graph2AutoTask.dll",
+            "args": ["--app-settings-config-file","../configs/appsettings.Development.json"],
             "cwd": "${workspaceFolder}/Graph2AutoTask",
             "console": "internalConsole",
             "stopAtEntry": false
@@ -20,8 +20,8 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
-            "program": "${workspaceFolder}/Graph2AutoTask/bin/Debug/netcoreapp3.1/Graph2AutoTask.dll",
-            "args": ["--app-settings-config-file","/opt/configs/appsettings.Diagnostics.json"],
+            "program": "${workspaceFolder}/Graph2AutoTask/bin/Debug/netcoreapp5/Graph2AutoTask.dll",
+            "args": ["--app-settings-config-file","../configs/appsettings.Development.json"],
             "cwd": "${workspaceFolder}/Graph2AutoTask",
             "console": "internalConsole",
             "stopAtEntry": false

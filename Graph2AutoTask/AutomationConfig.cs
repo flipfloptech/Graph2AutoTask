@@ -57,7 +57,8 @@ namespace Graph2AutoTask
         public string Account { get; set; }
         public string Status { get; set; }
         public string Priority { get; set; }
-        public string Queue { get; set; }
+        public string QueueUDF { get; set; }
+        public string DefaultQueue { get; set; }
         public string Source { get; set; }
         public string WorkType { get; set; }
         public TimeSpan DueDateOffset { get; set; }

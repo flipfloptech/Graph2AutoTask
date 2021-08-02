@@ -19,12 +19,13 @@ namespace AutotaskPSA
         private readonly string _atwsIntegrationKey = string.Empty;
         private readonly AutotaskIntegrations _atwsIntegrations = new AutotaskIntegrations();
         private readonly ATWSZoneInfo _atwsZoneInfo = null;
+        private GetFieldInfoResponse account_fieldInfo = null;
+        private getUDFInfoResponse account_udfInfo = null;
         private GetFieldInfoResponse ticket_fieldInfo = null;
         private GetFieldInfoResponse ticketNote_fieldInfo = null;
         private GetFieldInfoResponse attachmentInfo_fieldInfo = null;
         private List<AllocationCode> allocationCodes_WorkType = new List<AllocationCode>();
         private const string _AT_TicketRegEx = "^[T][0-9]{8}[.][0-9]{4}$";
-        
         public AutotaskAPIClient(string Username, string Password, AutotaskIntegrationKey IntegrationKey)
         {
             if (string.IsNullOrWhiteSpace(Username))
@@ -112,10 +113,13 @@ namespace AutotaskPSA
                 ticket_fieldInfo = _atwsServicesClient.GetFieldInfo(new GetFieldInfoRequest(_atwsIntegrations, "Ticket"));
                 ticketNote_fieldInfo = _atwsServicesClient.GetFieldInfo(new GetFieldInfoRequest(_atwsIntegrations, "TicketNote"));
                 attachmentInfo_fieldInfo = _atwsServicesClient.GetFieldInfo(new GetFieldInfoRequest(_atwsIntegrations, "AttachmentInfo"));
+                account_fieldInfo = _atwsServicesClient.GetFieldInfo(new GetFieldInfoRequest(_atwsIntegrations, "Account"));
+                account_udfInfo = _atwsServicesClient.getUDFInfo(new getUDFInfoRequest(_atwsIntegrations,"Account"));
                 allocationCodes_WorkType = UpdateUseTypeOneAllocationCodes();
             }
-            catch
+            catch(Exception _ex)
             {
+                _ex = _ex;
                 return false;
             }
             return true;
@@ -381,8 +385,8 @@ namespace AutotaskPSA
             {
                 strQuery.Append(_condition);
             }
-
             strQuery.Append(strQueryEnd);
+
             queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strQuery.ToString()));
             while (respResource.queryResult.ReturnCode > 0)
             {
@@ -419,6 +423,96 @@ namespace AutotaskPSA
             return _results;
 
         }
+
+        public Account UpdateAccountPickListUDF(Account account, string FieldName, string FieldValue)
+        {
+            try {
+                foreach(var _field in account.UserDefinedFields)
+                {
+                    if (_field.Name == FieldName)
+                    {
+                        _field.Value = PickListValueFromField(account_udfInfo.getUDFInfoResult,FieldName,FieldValue);
+                        break;
+                    }
+                }
+                updateResponse _updateResp = _atwsServicesClient.update(new updateRequest(_atwsIntegrations, new Entity[1] {account}));
+                if (_updateResp.updateResult.ReturnCode == 1)
+                    return (Account)_updateResp.updateResult.EntityResults[0];  
+                else
+                    return null;
+            }
+            catch(Exception _ex)
+            {
+                return null;
+            }
+        }
+        public Account[] FindAccountsByFieldValue(string FieldName, string FieldOperator = "contains", string FieldValue = null, bool isUDF = false)
+        {
+            Dictionary<int, decimal> _counts = new Dictionary<int, decimal>();
+            List<Account>_result = new List<Account>();
+            // Query Resource to get the owner of the lead
+            StringBuilder strQuery = new StringBuilder();
+            StringBuilder strQueryStart = new StringBuilder();
+            StringBuilder strQueryEnd = new StringBuilder();
+            List<StringBuilder> strConditions = new List<StringBuilder>();
+            try
+            {
+                strQueryStart.Append("<queryxml version=\"1.0\">");
+                strQueryStart.Append("<entity>Account</entity>");
+                strQueryStart.Append("<query>");
+
+                strConditions.Add(new StringBuilder());
+                strConditions.Last().Append($"<condition><field udf=\"{isUDF.ToString().ToLower()}\">{FieldName}<expression op=\"{FieldOperator}\">");
+                strConditions.Last().Append(FieldValue);
+                strConditions.Last().Append("</expression></field></condition>");
+
+                strQueryEnd.Append("</query></queryxml>");
+
+                strQuery.Append(strQueryStart);
+                foreach (StringBuilder _condition in strConditions)
+                {
+                    strQuery.Append(_condition);
+                }
+                strQuery.Append(strQueryEnd);
+                queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strQuery.ToString()));
+
+                while (respResource.queryResult.ReturnCode > 0)
+                {
+                    Account[] _temp = new Account[respResource.queryResult.EntityResults.Count()];
+                    Array.Copy(respResource.queryResult.EntityResults, 0, _temp, 0, respResource.queryResult.EntityResults.Count());
+                    _result.AddRange(_temp);
+                    if (respResource.queryResult.EntityResults.Length == 500)
+                    {// try for more
+                        if (strConditions.Count == 2)
+                        {
+                            strConditions.Remove(strConditions.Last());
+                        }
+
+                        strConditions.Add(new StringBuilder());
+                        strConditions.Last().Append("<condition><field>id<expression op=\"GreaterThan\">");
+                        strConditions.Last().Append(respResource.queryResult.EntityResults.Last().id);
+                        strConditions.Last().Append("</expression></field></condition>");
+                        strQuery.Clear();
+                        strQuery.Append(strQueryStart);
+                        foreach (StringBuilder _condition in strConditions)
+                        {
+                            strQuery.Append(_condition);
+                        }
+                        strQuery.Append(strQueryEnd);
+                        respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strQuery.ToString()));
+                    }
+                    else
+                    {
+                        break; // we got em all but returncode will never be > 0 unless we set it so just break out.
+                    }
+                }
+                return _result.ToArray();
+            }
+            catch (Exception _ex)
+            {
+                throw new Exception("AutotaskAPIClient.FindAccountsByFieldValue", _ex);
+            }
+        }
         public string LookupTicketStatusByValue(int value)
         {
             string _result = null;
@@ -438,6 +532,33 @@ namespace AutotaskPSA
             try
             {
                 _result = PickListLabelFromValue(ticket_fieldInfo.GetFieldInfoResult, "QueueID", Convert.ToString(value));
+            }
+            catch (Exception)
+            {
+                _result = null;
+            }
+            return _result;
+        }
+        public string LookupTicketQueueValueByName(string Name)
+        {
+            string _result = null;
+            try
+            {
+                _result = PickListValueFromField(ticket_fieldInfo.GetFieldInfoResult, "QueueID", Name);
+            }
+            catch (Exception)
+            {
+                _result = null;
+            }
+            return _result;
+        }
+        public string LookupAccountUDFByValue(string udfName, int value)
+        {
+            string _result = null;
+            try
+            {
+                
+                _result = PickListLabelFromValue(account_udfInfo.getUDFInfoResult,udfName,Convert.ToString(value));
             }
             catch (Exception)
             {
@@ -690,7 +811,6 @@ namespace AutotaskPSA
                 throw new Exception("AutotaskAPIClient.FindAccountByName", _ex);
             }
         }
-
         public Account FindAccountByDomain(string emailDomain)
         {
             Dictionary<int, decimal> _counts = new Dictionary<int, decimal>();
