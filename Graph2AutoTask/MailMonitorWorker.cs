@@ -743,10 +743,15 @@ namespace Graph2AutoTask
             _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_CreateTicket({_internal.ID})");
             try
             {
+                int _queueValue = 0;
+                string _queueLabel = _configuration.Autotask.Defaults.Ticket.DefaultQueue;
+                if (_configuration.Autotask.Defaults.Ticket.ForceDefault == false)
+                {
                 //lets check for a queue
-                int _queueValue = GetAccountUDFValue(_account,_configuration.Autotask.Defaults.Ticket.QueueUDF);
-                string _queueLabel = _atwsAPIClient.LookupAccountUDFByValue(_configuration.Autotask.Defaults.Ticket.QueueUDF,_queueValue);
-                if (String.IsNullOrWhiteSpace(_atwsAPIClient.LookupTicketQueueValueByName(_queueLabel))) { _queueLabel = _configuration.Autotask.Defaults.Ticket.DefaultQueue; }
+                    _queueValue = GetAccountUDFValue(_account,_configuration.Autotask.Defaults.Ticket.QueueUDF);
+                    _queueLabel = _atwsAPIClient.LookupAccountUDFByValue(_configuration.Autotask.Defaults.Ticket.QueueUDF,_queueValue);
+                    if (String.IsNullOrWhiteSpace(_atwsAPIClient.LookupTicketQueueValueByName(_queueLabel))) { _queueLabel = _configuration.Autotask.Defaults.Ticket.DefaultQueue; }
+                }
                 //create the ticket.
                 _Ticket = _atwsAPIClient.CreateTicket(_account, _contact, _internal.Message.Subject, _internal.Message.Body.Content, (DateTime.Now + _configuration.Autotask.Defaults.Ticket.DueDateOffset), _configuration.Autotask.Defaults.Ticket.Source, _configuration.Autotask.Defaults.Ticket.Status, _configuration.Autotask.Defaults.Ticket.Priority, _queueLabel, _configuration.Autotask.Defaults.Ticket.WorkType);
             }
