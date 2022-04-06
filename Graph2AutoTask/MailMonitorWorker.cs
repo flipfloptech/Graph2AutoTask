@@ -493,9 +493,25 @@ namespace Graph2AutoTask
             try
             {
                 StringBuilder _ticketNoteContent = new StringBuilder(_internal.Message.Body.Content);
+                String _contactEmailAddress = String.Empty;
                 if (_resource == null && _contact != null)
                 {
-                    _ticketNoteContent.Insert(0,$"Ticket Note Added By {(string)_contact.EMailAddress}\r\n");
+                    if (String.IsNullOrWhiteSpace((string)_contact.EMailAddress) == false)
+                        _contactEmailAddress = (string)_contact.EMailAddress;
+                    else if (String.IsNullOrWhiteSpace((string)_contact.EMailAddress2) == false)
+                        _contactEmailAddress = (string)_contact.EMailAddress2;
+                    else if (String.IsNullOrWhiteSpace((string)_contact.EMailAddress3) == false)
+                        _contactEmailAddress = (string)_contact.EMailAddress3;
+                    else
+                        _contactEmailAddress = String.Empty;
+                }
+                else if (_resource == null && _contact == null)
+                {
+                    _contactEmailAddress = _internal.Message.From.EmailAddress.Address;
+                }
+                if (String.IsNullOrWhiteSpace(_contactEmailAddress) == false)
+                {
+                    _ticketNoteContent.Insert(0,$"Ticket Note Added By {_contactEmailAddress}\r\n");
                 }
                 _TicketNote = _atwsAPIClient.CreateTicketNote(_ticket, _resource, _internal.Message.Subject.Replace((string)_ticket.TicketNumber, " ").Trim(), _ticketNoteContent.ToString(), _configuration.Autotask.Defaults.TicketNote.Type, _publish);
             }
