@@ -292,6 +292,65 @@ namespace AutotaskPSA
             }
             return _result;
         }
+        public Ticket UpdateTicket(Ticket OriginalTicket, string Title = null, string Description = null, DateTimeOffset? DueDate = null, string Source = null, string Status = null, string Priority = null, string Queue = null, string WorkType = null)
+        {
+            Ticket _result = null;
+            Ticket _UpdatedTicket = null;
+            if (OriginalTicket == null)
+                throw new ArgumentNullException("OriginalTicket missing");
+            _UpdatedTicket = OriginalTicket;
+            try
+            {
+                if (String.IsNullOrWhiteSpace(Title) == false)
+                    _UpdatedTicket.Title = Title.Substring(0, Title.Length > 255 ? 255 : Title.Length);
+
+                if (String.IsNullOrWhiteSpace(Description) == false)
+                    _UpdatedTicket.Description = Description.Substring(0, Description.Length > 8000 ? 8000 : Description.Length);
+                
+                if (DueDate != null)
+                    _UpdatedTicket.DueDateTime = DueDate.Value.LocalDateTime;
+                
+                if (String.IsNullOrWhiteSpace(Source) == false)
+                    _UpdatedTicket.Source = Convert.ToInt32(PickListValueFromField(ticket_fieldInfo.GetFieldInfoResult, "Source", Source));
+                
+                if (String.IsNullOrWhiteSpace(Status) == false)
+                    _UpdatedTicket.Status = Convert.ToInt32(PickListValueFromField(ticket_fieldInfo.GetFieldInfoResult, "Status", Status));
+
+                if (String.IsNullOrWhiteSpace(Priority) == false)
+                    _UpdatedTicket.Priority = Convert.ToInt32(PickListValueFromField(ticket_fieldInfo.GetFieldInfoResult, "Priority", Priority));
+
+                if (String.IsNullOrWhiteSpace(Queue) == false)
+                    _UpdatedTicket.QueueID = Convert.ToInt32(PickListValueFromField(ticket_fieldInfo.GetFieldInfoResult, "QueueID", Queue));
+
+                if (String.IsNullOrWhiteSpace(WorkType) == false)
+                    _UpdatedTicket.AllocationCodeID = allocationCodes_WorkType.Exists(_code => Convert.ToString(_code.Name) == WorkType) ? allocationCodes_WorkType.First(_code => Convert.ToString(_code.Name) == WorkType).id : new long?();
+            }
+            catch (Exception _ex)
+            {
+                _UpdatedTicket = null;
+                throw new ArgumentException("Unable to update ticket request. Please review InnerException.", _ex);
+            }
+            try
+            {
+                if (_UpdatedTicket != null)
+                {
+                    updateResponse _response = _atwsServicesClient.update(new updateRequest(_atwsIntegrations, new Entity[] { _UpdatedTicket }));
+                    if (_response.updateResult.ReturnCode > 0 && _response.updateResult.EntityResults.Length > 0)
+                        _result = (Ticket)_response.updateResult.EntityResults[0];
+                    else if (_response.updateResult.ReturnCode <= 0 && _response.updateResult.EntityResults.Length == 0 && _response.updateResult.Errors.Count() > 0)
+                        throw new CommunicationException(_response.updateResult.Errors[0].Message);
+                    else
+                        throw new CommunicationException("AutotaskAPIClient.UpdateTicket() UNKNOWN ERROR");
+                }
+            }
+            catch (Exception _ex)
+            {
+                _result = null;
+                throw new CommunicationException("Unable to update ticket. Please review InnerException.", _ex);
+            }
+            return _result;
+        }
+
         public Ticket CreateTicket(Account Account, Contact Contact, string Title, string Description, DateTimeOffset DueDate, string Source, string Status, string Priority, string Queue, string WorkType)
         {
             Ticket _result = null;
@@ -335,7 +394,7 @@ namespace AutotaskPSA
                     else if (_response.createResult.ReturnCode <= 0 && _response.createResult.EntityResults.Length == 0 && _response.createResult.Errors.Count() > 0)
                         throw new CommunicationException(_response.createResult.Errors[0].Message);
                     else
-                        throw new CommunicationException("AutotaskAPIClient.CreateTicketNote() UNKNOWN ERROR");
+                        throw new CommunicationException("AutotaskAPIClient.CreateTicket() UNKNOWN ERROR");
                 }
             }
             catch (Exception _ex)
@@ -728,6 +787,40 @@ namespace AutotaskPSA
             catch (Exception _ex)
             {
                 throw new Exception("AutotaskAPIClient.FindContactByEmail", _ex);
+            }
+        }
+        public Contact FindContactByID(int ContactID)
+        {
+            Contact _result = null;
+            // Query Resource to get the owner of the lead
+            StringBuilder strResource = new StringBuilder();
+            try
+            {
+                strResource.Append("<queryxml version=\"1.0\">");
+                strResource.Append("<entity>Contact</entity>");
+                strResource.Append("<query>");
+                strResource.Append("<condition><field>id<expression op=\"equals\">");
+                strResource.Append(Convert.ToString(ContactID));
+                strResource.Append("</expression></field></condition>");
+
+                strResource.Append("<condition><field>Active<expression op=\"equals\">");
+                strResource.Append("1");
+                strResource.Append("</expression></field></condition>");
+                
+                strResource.Append("</query></queryxml>");
+
+                queryResponse respResource = _atwsServicesClient.query(new queryRequest(_atwsIntegrations, strResource.ToString()));
+
+                if (respResource.queryResult.ReturnCode > 0 && respResource.queryResult.EntityResults.Length > 0)
+                {
+                    _result = (Contact)respResource.queryResult.EntityResults[0];
+                }
+
+                return _result;
+            }
+            catch (Exception _ex)
+            {
+                throw new Exception("AutotaskAPIClient.FindContactByID", _ex);
             }
         }
         public Contact FindFirstContactByDomain(string emailDomain)

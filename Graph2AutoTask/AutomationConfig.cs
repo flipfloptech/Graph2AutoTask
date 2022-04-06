@@ -56,6 +56,7 @@ namespace Graph2AutoTask
     {
         public string Account { get; set; }
         public string Status { get; set; }
+        public AutotaskTicketUpdateStatuses UpdateStatus { get; set; }
         public string Priority { get; set; }
         public string QueueUDF { get; set; }
         public string DefaultQueue { get; set; }
@@ -63,6 +64,12 @@ namespace Graph2AutoTask
         public string Source { get; set; }
         public string WorkType { get; set; }
         public TimeSpan DueDateOffset { get; set; }
+    }
+    public class AutotaskTicketUpdateStatuses
+    {
+        public string ByResource {get; set; }
+        public string ByContact { get; set; }
+        public string ByOther {get; set; }
     }
     public class AutotaskTicketNoteDefaultsConfig
     {

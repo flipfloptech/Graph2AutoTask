@@ -54,7 +54,7 @@ namespace Graph2AutoTask
                                               .Build();
                 _opsGenieClient = new OpsGenieClient(new OpsGenieClientConfig() { ApiKey = _configuration.OpsGenie.ApiKey }, new OpsGenieSerializer());
                 _graphAPIClient = new GraphServiceClient(new MsalAuthenticationProvider(_confidentialClientApplication, new string[] { "https://graph.microsoft.com/.default" }));
-                _atwsAPIClient = new AutotaskAPIClient(_configuration.Autotask.Username, _configuration.Autotask.Password, AutotaskIntegrationKey.nCentral);
+                _atwsAPIClient = new AutotaskAPIClient(_configuration.Autotask.Username, _configuration.Autotask.Password, AutotaskIntegrationKey.nCentral); // Yes I cheat and use the nCentral Key
 
                 if (!SetupMailFolders())
                 {
@@ -268,10 +268,41 @@ namespace Graph2AutoTask
             if (_ExistingResource != null)
                 _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindResourceByEmail({_internal.ID})");
             else
-                //try searching by domain
                 _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_FindResourceByEmail({_internal.ID})");
             //continue with creating a ticket note anyway.
             _arguments.Add("resource", _ExistingResource); // we really don't or shouldn't care of it the resource exists, this is just for impersonation.
+            ApiQueueJob _findContactByID = new ApiQueueJob(_internal.ID, queue_FindContactByID, _arguments, 5, new TimeSpan(0, 1, 0), true);
+            _queueManager.Enqueue(_findContactByID);
+        }
+
+        private void queue_FindContactByID(Dictionary<string, object> _arguments)
+        {
+            InternalMessage _internal = (InternalMessage)_arguments["message"];
+            AutotaskPSA.Contact _ExistingContact = null;
+            AutotaskPSA.Ticket _ticket = (AutotaskPSA.Ticket)_arguments["ticket"];
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_FindContactByID({_internal.ID})");
+            try
+            {
+                int _contactID = Convert.ToInt32(_ticket.ContactID);
+                if (_contactID > 0)
+                    _ExistingContact = _atwsAPIClient.FindContactByID(_contactID);
+                else
+                    _ExistingContact = null;
+            }
+            catch (Exception _ex)
+            {
+                Exception _included = _ex;
+                if (_ex.InnerException != null)
+                    _included = _ex.InnerException;
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_FindContactByID({_internal.ID})");
+                throw new ApiQueueException($"queue_FindContactByID({_internal.ID})", _included);
+            }
+            if (_ExistingContact != null)
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_FindContactByID({_internal.ID})");
+            else
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_FindContactByID({_internal.ID})");
+            //continue with creating a ticket note anyway.
+            _arguments.Add("contact", _ExistingContact); // we really don't or shouldn't care of it the resource exists, this is just for impersonation.
             ApiQueueJob _createTicketNote = new ApiQueueJob(_internal.ID, queue_CreateTicketNote, _arguments, 5, new TimeSpan(0, 1, 0), true);
             _queueManager.Enqueue(_createTicketNote);
         }
@@ -450,6 +481,7 @@ namespace Graph2AutoTask
             InternalMessage _internal = (InternalMessage)_arguments["message"];
             AutotaskPSA.Ticket _ticket = (AutotaskPSA.Ticket)_arguments["ticket"];
             AutotaskPSA.Resource _resource = (AutotaskPSA.Resource)_arguments["resource"];
+            AutotaskPSA.Contact _contact = (AutotaskPSA.Contact)_arguments["contact"];
             TicketNote _TicketNote = null;
             bool _flaggedInternal = false;
 
@@ -460,7 +492,12 @@ namespace Graph2AutoTask
             _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_CreateTicketNote({_internal.ID})");
             try
             {
-                _TicketNote = _atwsAPIClient.CreateTicketNote(_ticket, _resource, _internal.Message.Subject.Replace((string)_ticket.TicketNumber, " ").Trim(), _internal.Message.Body.Content, _configuration.Autotask.Defaults.TicketNote.Type, _publish);
+                StringBuilder _ticketNoteContent = new StringBuilder(_internal.Message.Body.Content);
+                if (_resource == null && _contact != null)
+                {
+                    _ticketNoteContent.Insert(0,$"Ticket Note Added By {(string)_contact.EMailAddress}\r\n");
+                }
+                _TicketNote = _atwsAPIClient.CreateTicketNote(_ticket, _resource, _internal.Message.Subject.Replace((string)_ticket.TicketNumber, " ").Trim(), _ticketNoteContent.ToString(), _configuration.Autotask.Defaults.TicketNote.Type, _publish);
             }
             catch (Exception _ex)
             {
@@ -474,17 +511,125 @@ namespace Graph2AutoTask
             {
                 //ticket created queue message move now - attachments?
                 _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_CreateTicketNote({_internal.ID})");
-                _arguments.Add("folderDestination", _processed_folder);
-                _arguments.Add("ticketnote", _TicketNote);
-                if (_arguments.ContainsKey("ticket"))
-                    _arguments.Remove("ticket");
-                ApiQueueJob _moveMessageToFolder = new ApiQueueJob(_internal.ID, queue_MoveMessageToFolder, _arguments, 5, new TimeSpan(0, 1, 0));
-                _queueManager.Enqueue(_moveMessageToFolder);
+                ApiQueueJob _updateTicketStatus = new ApiQueueJob(_internal.ID, queue_UpdateTicket, _arguments, 5, new TimeSpan(0, 1, 0));
+                _queueManager.Enqueue(_updateTicketStatus);
             }
             else
             {
                 _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_CreateTicketNote({_internal.ID})");
                 throw new ApiQueueException($"queue_CreateTicketNote({_internal.ID})");
+            }
+        }
+
+        private void queue_UpdateTicket(Dictionary<string,object> _arguments)
+        {
+            InternalMessage _internal = (InternalMessage)_arguments["message"];
+            AutotaskPSA.Ticket _OriginalTicket = (AutotaskPSA.Ticket)_arguments["ticket"];
+            AutotaskPSA.Resource _resource = (AutotaskPSA.Resource)_arguments["resource"];
+            AutotaskPSA.Contact _contact = (AutotaskPSA.Contact)_arguments["contact"];
+            Ticket _UpdatedTicket = null;
+            _logger.LogInformation($"[{_configuration.MailBox}] - ENTRY - queue_UpdateTicket({_internal.ID})");
+            try
+            {
+                bool isEmailFromResource = false;
+                bool isEmailFromTicketResource = false;
+                bool isEmailFromTicketContact = false;
+                bool isEmailToTicketContact = false;
+                if (_resource != null)
+                {
+                    isEmailFromResource = true;
+                    if ((int)_OriginalTicket.AssignedResourceID == _resource.id)
+                    {
+                        isEmailFromTicketResource = true;
+                    }
+                }
+                if (_contact != null)
+                {
+                    List<string> _emailList = new List<string>();
+                    if (String.IsNullOrWhiteSpace((string)_contact.EMailAddress) == false)
+                    {
+                        _emailList.Add(((string)_contact.EMailAddress).ToLowerInvariant());
+                    }
+                    if (String.IsNullOrWhiteSpace((string)_contact.EMailAddress2) == false)
+                    {
+                        _emailList.Add(((string)_contact.EMailAddress2).ToLowerInvariant());
+                    }
+                    if (String.IsNullOrWhiteSpace((string)_contact.EMailAddress3) == false)
+                    {
+                        _emailList.Add(((string)_contact.EMailAddress3).ToLowerInvariant());
+                    }
+                    if (_emailList.Contains(_internal.Message.From.EmailAddress.Address.ToLowerInvariant()))
+                    {
+                        isEmailFromTicketContact = true;
+                    }
+                    if (isEmailToTicketContact == false)
+                    {   // check TO field
+                        foreach(Recipient _recipient in _internal.Message.ToRecipients)
+                        {
+                            if (_emailList.Contains(((string)_recipient.EmailAddress.Address).ToLowerInvariant())) {
+                                isEmailToTicketContact = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (isEmailToTicketContact == false)
+                    {   // check CC field
+                        foreach(Recipient _recipient in _internal.Message.CcRecipients)
+                        {
+                            if (_emailList.Contains(((string)_recipient.EmailAddress.Address).ToLowerInvariant())) {
+                                isEmailToTicketContact = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (isEmailFromTicketResource == true)
+                {
+                    _UpdatedTicket = _atwsAPIClient.UpdateTicket(_OriginalTicket,null,null,null,null,_configuration.Autotask.Defaults.Ticket.UpdateStatus.ByResource);
+                }
+                else if (isEmailFromTicketContact == true)
+                {
+                    _UpdatedTicket = _atwsAPIClient.UpdateTicket(_OriginalTicket,null,null,null,null,_configuration.Autotask.Defaults.Ticket.UpdateStatus.ByContact);
+                }
+                else if (isEmailFromResource == true)
+                {
+                    if (isEmailToTicketContact == true)
+                    {
+                        _UpdatedTicket = _atwsAPIClient.UpdateTicket(_OriginalTicket,null,null,null,null,_configuration.Autotask.Defaults.Ticket.UpdateStatus.ByResource);
+                    }
+                    else
+                    {
+                        _UpdatedTicket = _atwsAPIClient.UpdateTicket(_OriginalTicket,null,null,null,null,_configuration.Autotask.Defaults.Ticket.UpdateStatus.ByOther);
+                    }               
+                }
+                else
+                {
+                    _UpdatedTicket = _atwsAPIClient.UpdateTicket(_OriginalTicket,null,null,null,null,_configuration.Autotask.Defaults.Ticket.UpdateStatus.ByOther);
+                }
+            }
+            catch (Exception _ex)
+            {
+                Exception _included = _ex;
+                if (_ex.InnerException != null)
+                    _included = _ex.InnerException;
+                _logger.LogInformation($"[{_configuration.MailBox}] - EXCEPTION - queue_UpdateTicket({_internal.ID})");
+                throw new ApiQueueException($"queue_UpdateTicket({_internal.ID})", _included);
+            }
+            if (_UpdatedTicket != null)
+            {
+                //ticket created queue message move now - attachments?
+                _logger.LogInformation($"[{_configuration.MailBox}] - SUCCESS - queue_UpdateTicket({_internal.ID})");
+                _arguments.Add("folderDestination", _processed_folder);
+                if (_arguments.ContainsKey("ticket"))
+                    _arguments.Remove("ticket");
+                _arguments.Add("ticket",_UpdatedTicket);
+                ApiQueueJob _moveMessageToFolder = new ApiQueueJob(_internal.ID, queue_MoveMessageToFolder, _arguments, 5, new TimeSpan(0, 1, 0));
+                _queueManager.Enqueue(_moveMessageToFolder);
+            }
+            else
+            {
+                _logger.LogInformation($"[{_configuration.MailBox}] - FAIL - queue_UpdateTicket({_internal.ID})");
+                throw new ApiQueueException($"queue_UpdateTicket({_internal.ID})");
             }
         }
 
